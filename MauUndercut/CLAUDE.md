@@ -4,10 +4,12 @@ This file is the complete reference for the MauUndercut addon: what it does, how
 
 ## 1. What it is
 
-MauUndercut is a World of Warcraft addon with two features, both living as extra tabs inside Blizzard's auction house window:
+MauUndercut is a World of Warcraft addon with four features:
 
-1. **MauUndercut tab (posting)**: tick bag stacks, the addon looks up the lowest listed price of each one, pre-fills *lowest minus undercut*, and posts when the user clicks OK, then moves to the next stack.
-2. **MauScan tab (scanner)**: one full dump of the auction house, listing every item with its lowest price, with the items listed below vendor sell price first and the profit of buying and vendoring them.
+1. **MauUndercut tab (posting)**, inside Blizzard's auction house window: tick bag stacks, the addon looks up the lowest listed price of each one, pre-fills *lowest minus undercut*, and posts when the user clicks OK, then moves to the next stack.
+2. **MauScan tab (scanner)**, same window: one full dump of the auction house, listing every item with its lowest price, with the items listed below vendor sell price first and the profit of buying and vendoring them.
+3. **Price database + tooltip line** (0.7): the lowest auction price of every item ever seen (searches, browse results, scans), persisted in the saved variables, shown as an "Auction price" tooltip line; Shift shows the stack value.
+4. **Crafting profit** (0.7): profit per recipe in Blizzard's professions window, from the price database (reagents at auction or vendor price, product at auction price after the 5% cut).
 
 Nothing else. Features that were added and later removed are listed in section 9; do not bring them back without asking.
 
@@ -33,12 +35,15 @@ Nothing else. Features that were added and later removed are listed in section 9
 
 | File | Role |
 |---|---|
-| `MauUndercut.toc` | Manifest. Load order: MauUndercut.lua, Poster.lua, UI.lua, Scanner.lua, ScanUI.lua. |
+| `MauUndercut.toc` | Manifest. Load order: MauUndercut.lua, Prices.lua, Poster.lua, UI.lua, Scanner.lua, ScanUI.lua, Tooltip.lua, Crafting.lua. |
 | `MauUndercut.lua` | Namespace `NS` (also `_G.MauUndercut`), helpers (money formatting, quality colours, item keys, sanitising prices), saved variables and defaults, bag scanning, auction house tab injection, event frame, `/mu` slash command. |
+| `Prices.lua` | `NS.Prices`: the persistent price database (auction search results, browse results, scan batches, vendor purchase prices) and its version counter. |
 | `Poster.lua` | `NS.Poster`: the posting state machine (queue, search, price suggestion, auto-skip, post, bookkeeping of created auctions). |
 | `UI.lua` | `NS.UI`: the posting panel (bag list with checkboxes on the left, current item / price / quantity / duration / OK on the right). |
-| `Scanner.lua` | `NS.Scanner`: the full-dump scanner (ReplicateItems, two passes, item data loading, results). |
+| `Scanner.lua` | `NS.Scanner`: the full-dump scanner (ReplicateItems, two passes, item data loading, results, bulk update of the price database). |
 | `ScanUI.lua` | `NS.ScanUI`: the scanner panel (scan button, filters, results list). |
+| `Tooltip.lua` | `NS.Tooltip`: the "Auction price" tooltip line (TooltipDataProcessor post call, Shift for stack value). |
+| `Crafting.lua` | `NS.Crafting`: profit per recipe in `ProfessionsFrame` (row value + detail line). |
 | `README.md` | User-facing description. |
 
 All files share the addon-private table via `local _, NS = ...`. No libraries are embedded. Indentation is tabs.
@@ -68,6 +73,20 @@ All files share the addon-private table via `local _, NS = ...`. No libraries ar
 - Row click: commodities open directly on the Buy tab (`AuctionHouseFrame:SelectBrowseResult`), other items run a name search (`SearchBar:SetSearchText` + `StartSearch`). Shift-click links the item. The addon never buys anything.
 - Chat reports when the dump was requested, how long it took, how many entries, and the final counts.
 - `/mu scan` selects this tab.
+
+### 5.3 Price database and tooltip line
+
+- Every item the client has seen on the auction house has one lowest unit price and the time it was seen, kept across sessions. Sources: any commodity/item search result event (the Buy tab, the posting tab, other addons), browse results (Buy tab list), and the full scan (bulk update at the end). Own auctions count; equipment variants share the item ID's price.
+- Merchant windows record the vendor's unit price per item (extended-cost items excluded) for the crafting calculation.
+- Tooltip: `Auction price (age)` with the price, on `GameTooltip` and `ItemRefTooltip` only. With Shift held: `Auction price xN` with price × N, where N is the hovered bag/bank stack (exact) or the button's count, else the item's maximum stack size (shown as "(full stack)"). No line when the item has never been seen.
+- No settings, no toggle; the user asked for it to be always on.
+
+### 5.4 Crafting profit
+
+- In Blizzard's professions window every recipe row that produces an item gets a right-aligned value: `+1.2g` / `-45s` (green / red) or a grey `?` when the product price or any reagent price is unknown.
+- The selected recipe shows a line under its name: `Reagents: <cost> (n without a known price) - Sells for: <unit price> xQ - Profit: <signed> (after 5% cut)`. Q is the average of quantityMin/quantityMax when it is not 1.
+- Reagent unit cost = min(auction price, vendor price) when both are known, otherwise whichever exists. Profit = sell × Q × (1 − 0.05) − cost, only when nothing is missing.
+- Enchants, salvage and gathering "recipes" (no `outputItemID` or not `TradeskillRecipeType.Item`) show nothing.
 
 ## 6. Technical details
 
@@ -101,13 +120,38 @@ States: `idle → searching | waitingKey | waitingThrottle → ready → (post) 
 - **Memory design** (this matters, see 9): never a table per auction. Pass 1 walks the list in batches of 500 per frame and keeps per item only `{itemID, name, icon, quality, low, quantity, vendor, dealQuantity, dealCount, profit}`. Then item data is loaded for items the client has not cached (`C_Item.GetItemInfo` → vendor price is return value 11; missing items are requested with `C_Item.RequestLoadItemDataByID` and resolved on `GET_ITEM_INFO_RECEIVED` / `ITEM_DATA_LOAD_RESULT`, 40 s timeout). Pass 2 walks the list again and accumulates, per item, the auctions whose buyout is below vendor × count (own auctions excluded). Results are the per-item records themselves, sorted deals-first by profit then name, kept only in memory, and `collectgarbage("collect")` runs at the end.
 - A scan is cancelled (state `failed`) if the auction house closes or no list arrives within 90 s.
 - `lastScanTime` is saved so the 15-minute countdown survives `/reload`.
+- `Finish()` hands `self.byItem` to `NS.Prices:UpdateFromScan` (one `Set` per item, one version bump) before the per-item tables are dropped.
 
 ### 6.4 Saved variables (`MauUndercutDB`)
 
 - `settings.undercut` (copper, default 1), `settings.duration` (1–3, default from the `auctionHouseDurationDropdown` CVar).
 - `prices[itemKeyString] = {price, time}`: last posted price per item key, used as a fallback suggestion.
 - `scan.lastScanTime`, `scan.minProfit`, `scan.onlyDeals`.
-- `priceCache` and `ledger` keys are deleted on load (leftovers of removed features).
+- `market[itemID] = copper` and `marketTime[itemID] = unixTime`: the price database (0.7). Integer keys, number values, nothing else per item.
+- `vendorBuy[itemID] = copper`: vendor purchase price per unit (0.7).
+- `priceCache` and `ledger` keys are deleted on load (leftovers of removed features; note `priceCache` from 0.4 is a different key than `market`).
+
+### 6.6 Price database (`Prices.lua`)
+
+- `NS.Prices` is a frame registered for `COMMODITY_SEARCH_RESULTS_UPDATED/ADDED(itemID)`, `ITEM_SEARCH_RESULTS_UPDATED/ADDED(itemKey)`, `AUCTION_HOUSE_BROWSE_RESULTS_UPDATED` (reads `C_AuctionHouse.GetBrowseResults()`), `AUCTION_HOUSE_BROWSE_RESULTS_ADDED(addedBrowseResults)`, `MERCHANT_SHOW`, `MERCHANT_UPDATE`. It reads the same result lists Blizzard's UI reads, so it costs nothing extra on the server side.
+- Commodity results: minimum `unitPrice`. Item results: minimum `buyoutAmount / quantity`, keyed by `itemKey.itemID`. Browse results: `minPrice` per `itemKey.itemID`. At most 1000 entries per event are looked at.
+- Merchants: `GetMerchantNumItems()`, `GetMerchantItemID(i)`, `C_MerchantFrame.GetItemInfo(i)` (`price`, `stackCount`, `hasExtendedCost`, `currencyID`; the client loads the Mainline `MerchantFrame.lua`, verified in the `Blizzard_UIPanels_Game` TOC) with a fallback to the legacy `GetMerchantItemInfo`.
+- API: `Get(itemID) → price, time`, `GetVendorBuy(itemID)`, `GetUnitCost(itemID)` (min of both), `Set`, `UpdateFromScan(byItem)`, `Count()`. `Prices.version` increments on every change (`Changed()`), which also pokes `NS.Crafting:OnPricesChanged()`.
+- Why this is safe where 0.4 was not: two numeric tables keyed by integer item IDs (a few thousand items is well under a megabyte), no table or string per item, no per-frame work, no `GetItemInfo` calls on the tooltip path, no closures created in event handlers. If memory or FPS ever degrade again, measure before touching the design.
+
+### 6.7 Tooltip line (`Tooltip.lua`)
+
+- `TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, fn)`; `fn(tooltip, data)` uses `data.id` (verified in `Blizzard_SharedXMLGame/Tooltip/TooltipDataHandler.lua` and `TooltipUtil.GetDisplayedItem`). Only `GameTooltip` and `ItemRefTooltip` get the line (comparison and embedded tooltips are skipped).
+- Stack count: the tooltip owner's `GetBagID()`/`GetID()` → `C_Container.GetContainerItemInfo(...).stackCount` (bag and bank buttons), else the owner's `.count` field set by `SetItemButtonCount` (merchant, mail, trade buttons), else `C_Item.GetItemMaxStackSizeByID(itemID)`.
+- Shift toggling: bag tooltips are rebuilt by Blizzard's `OnUpdate` every 0.2 s (`ContainerFrameItemButtonMixin:OnUpdate` calls `SetBagItem` again). For everything else `MODIFIER_STATE_CHANGED` (LSHIFT/RSHIFT) calls `tooltip:RefreshData()` (`GameTooltipDataMixin:RefreshData` → `RebuildFromTooltipInfo`, re-runs the getter and all post calls) when the tooltip is shown and `IsTooltipType(Item)`.
+
+### 6.8 Crafting profit (`Crafting.lua`)
+
+- Forever uses the modern `Blizzard_Professions` addon with a `Camelot/` override layer (`ProfessionsFrame`, `CraftingPage`, `RecipeList` 304 px wide, `SchematicForm` 493×484; `Blizzard_Professions.toc` loads `[Game]\...` files for `camelot`). Load-on-demand: `NS.Crafting:TryInit()` runs on `ADDON_LOADED` for `Blizzard_Professions`, at `PLAYER_LOGIN` if already loaded, and on `TRADE_SKILL_SHOW`.
+- Rows: `ScrollUtil.AddInitializedFrameCallback(ProfessionsFrame.CraftingPage.RecipeList.ScrollBox, cb, owner, false)`; the callback receives `(owner, row, node)` and runs after `ProfessionsRecipeListRecipeMixin:Init`. `node:GetData().recipeInfo` identifies the recipe (categories/dividers have none → hide). The value is a `GameFontHighlightSmall` string anchored `RIGHT -6` (or left of `LockedIcon`); the `Label` width is reduced so names never run under it (same formula as Blizzard's Init, plus the value width). `iterateExisting` is false on purpose because `ForEachFrame` passes `(frame, elementData)` while the callback expects `(owner, frame, elementData)`.
+- Detail line: `hooksecurefunc(SchematicForm, "Init", ...)` (called as `SchematicForm:Init(recipeInfo)`); a `GameFontNormalSmall` string anchored `TOPLEFT` to `OutputText` `BOTTOMLEFT (0, -4)`, width 430. `OutputSubText` is never used on this client (no callers of `SetOutputSubText`), so that space is free; the vertical layout organizer for description/tools/cooldown starts 12 px below the 53 px icon, below our line.
+- Data: `C_TradeSkillUI.GetRecipeSchematic(recipeID, false)` → `recipeType`, `outputItemID`, `quantityMin/Max`, `reagentSlotSchematics[i]` with `reagentType == Enum.CraftingReagentType.Basic` (1), `reagents[1].itemID`, `quantityRequired`. Ranked recipes use `Professions.GetHighestLearnedRecipe(recipeInfo)` like Blizzard's row. Results are cached per recipe against `NS.Prices.version`; `OnPricesChanged` re-decorates visible rows (`ScrollBox:ForEachFrame`) and the form after a 0.2 s coalescing timer while the window is shown.
+- `AH_CUT = 0.05` is a constant in `Crafting.lua`; the scanner and poster do not apply a cut anywhere.
 
 ### 6.5 UI building blocks (all verified in the `forever` branch)
 
@@ -119,18 +163,22 @@ States: `idle → searching | waitingKey | waitingThrottle → ready → (post) 
 - Durations 2 / 8 / 24 hours. Quantity defaults to the maximum available. Undercut 1 copper. Auto-skip below vendor price.
 - Scanner shows every item, deals first, with the vendor-flip profit next to them; results are not persisted.
 - The 15-minute scan cooldown is a server rule and must stay in the client too.
-- Only the two features above are wanted. Keep the addon lean; memory and FPS were an explicit concern.
+- Keep the addon lean; memory and FPS were an explicit concern.
+- 2026-09-24: the user explicitly asked for a **persistent** price database again (every auction lookup and every scan update it, prices survive logout), an always-on tooltip line with Shift for the stack value, and profit per recipe in the professions window. This supersedes the "session-only" rule from the 0.4 removal; the design constraints in 6.6 are what makes it acceptable.
+- Crafting profit is shown after a 5% auction house cut; reagents are priced at the lower of auction and vendor price; vendor prices are learned by visiting vendors.
 
 ## 8. How to verify changes
 
 1. Syntax: node + luaparse over every `.lua` file.
 2. In game: `/reload`, open an auctioneer, both tabs must appear after Buy/Sell/Auctions. Post one cheap commodity and one piece of gear; run one scan; watch the AddOns memory column for growth.
-3. If Blizzard's UI changes, re-check against the `forever` branch before assuming an API or template.
+3. Price database and tooltip: search an item on the Buy tab, close the auction house, hover that item in the bags: the "Auction price" line must show; hold Shift for `xN`. After `/reload` the line must still be there (saved variables).
+4. Crafting: open a profession after a scan; rows show values, selecting a recipe shows the detail line; visit a vendor selling a reagent (vials, thread) and the cost of recipes using it should drop to the vendor price.
+5. If Blizzard's UI changes, re-check against the `forever` branch before assuming an API or template.
 
 ## 9. Removed features (do not reintroduce without asking)
 
 - **Sales ledger / `/mu stats` window** (v0.3–0.5): recorded every created auction ID and matched "Auction successful" mail invoices (`GetInboxInvoiceInfo`, hooks on `TakeInboxMoney` / `AutoLootMailItem`) to report gold earned. Worked, but the user asked for it to be removed to keep the addon to posting and scanning.
-- **Persistent price cache + tooltip line** (v0.4): stored the lowest seen price of every item (scans, searches, Buy-tab browsing) in saved variables and added a tooltip line via `TooltipDataProcessor.AddTooltipPostCall`. Removed because memory grew and FPS dropped to ~20 over time. Any future cache must stay small and session-only.
+- **Persistent price cache + tooltip line, first version** (v0.4): stored the lowest seen price of every item (scans, searches, Buy-tab browsing) in saved variables and added a tooltip line via `TooltipDataProcessor.AddTooltipPostCall`. Removed because memory grew and FPS dropped to ~20 over time. Re-introduced on request in 0.7 as `Prices.lua` / `Tooltip.lua` with the constraints in 6.6 (numbers only, integer keys, no per-frame work). If the problem returns, profile before ripping it out: the requirement is persistence.
 - **Per-auction scan data** (v0.2–0.4): the first scanner kept a table per auction; replaced by the two-pass, numbers-only design above for the same memory reason.
 - **Client-side cooldown removal** (tested once): the server enforces 15 minutes, so the cooldown was restored.
 

@@ -162,6 +162,11 @@ function NS.InitDB()
 	MauUndercutDB.prices = MauUndercutDB.prices or {}
 	MauUndercutDB.settings = MauUndercutDB.settings or {}
 	MauUndercutDB.scan = MauUndercutDB.scan or {}
+	-- Price database (0.7): lowest auction price per item and when it was seen,
+	-- plus vendor purchase prices.  Item IDs as keys, plain numbers as values.
+	MauUndercutDB.market = MauUndercutDB.market or {}
+	MauUndercutDB.marketTime = MauUndercutDB.marketTime or {}
+	MauUndercutDB.vendorBuy = MauUndercutDB.vendorBuy or {}
 	-- Data of removed features (0.4 price cache, 0.3 sales ledger); drop it.
 	MauUndercutDB.priceCache = nil
 	MauUndercutDB.ledger = nil

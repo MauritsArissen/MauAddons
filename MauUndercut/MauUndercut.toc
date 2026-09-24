@@ -1,14 +1,17 @@
 ## Interface: 16001
 ## Title: MauUndercut
-## Notes: Bulk auction posting with automatic lowest-price lookup and undercut, plus a full auction house scanner that shows every item's lowest price and the profit on items listed below vendor price.
+## Notes: Bulk auction posting with automatic lowest-price lookup and undercut, a full auction house scanner, a persistent price database with a tooltip line, and crafting profit in the professions window.
 ## Author: Gamer
-## Version: 0.6.0
+## Version: 0.7.0
 ## SavedVariables: MauUndercutDB
 ## IconTexture: Interface\Icons\INV_Misc_Coin_02
 ## X-Game: World of Warcraft: Forever (1.60.x)
 
 MauUndercut.lua
+Prices.lua
 Poster.lua
 UI.lua
 Scanner.lua
 ScanUI.lua
+Tooltip.lua
+Crafting.lua

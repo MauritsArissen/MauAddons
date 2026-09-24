@@ -9,7 +9,8 @@
 --   item data: names, icons and vendor prices (loaded from the server if the
 --              client has not seen the item yet)
 --   pass 2:    for items with a vendor price, how much is listed below it
--- Nothing from a scan is written to the saved variables.
+-- The only thing a scan writes to the saved variables is the lowest price per
+-- item, handed to the price database (Prices.lua) in one batch at the end.
 
 local _, NS = ...
 
@@ -426,6 +427,10 @@ function Scanner:Finish()
 		deals = deals,
 		totalProfit = totalProfit,
 	}
+	-- Bulk update of the price database with the lowest price of every item.
+	if NS.Prices and NS.Prices.UpdateFromScan then
+		NS.Prices:UpdateFromScan(self.byItem)
+	end
 	self:Clear()
 	self.state = "done"
 	self.message = string.format("Scanned %s auctions, %s items, %d below vendor price.",
