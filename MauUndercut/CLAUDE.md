@@ -22,9 +22,9 @@ Nothing else. Features that were added and later removed are listed in section 9
 
 ## 3. Install and dev loop
 
-- The project folder is `C:\Users\Gamer\Documents\Nightfall` (historical name; the addon was renamed from Nightfall to MauUndercut on 2026-09-24).
+- The project folder is `C:\Users\Gamer\Documents\MauAddons\MauUndercut`, inside the MauAddons git repository (https://github.com/MauritsArissen/MauAddons). The addon was renamed from Nightfall to MauUndercut and moved out of `Documents\Nightfall` on 2026-09-24.
 - A directory junction makes the game see it as `_classic_beta_\Interface\AddOns\MauUndercut`. The folder name the game sees must equal the TOC name (`MauUndercut.toc`). Recreate with:
-  `New-Item -ItemType Junction -Path "<AddOns>\MauUndercut" -Target "C:\Users\Gamer\Documents\Nightfall"`
+  `New-Item -ItemType Junction -Path "<AddOns>\MauUndercut" -Target "C:\Users\Gamer\Documents\MauAddons\MauUndercut"`
 - Edit files in place, `/reload` in game. No build step.
 - There is no Lua interpreter on this machine. Syntax-check with node + the `luaparse` npm package (parse each file with `luaVersion: '5.1'`). Runtime behaviour can only be verified in the game; ask the user for error text (`/console scriptErrors 1` or BugSack).
 - Saved variables: `MauUndercutDB` (account-wide) in `WTF\Account\<account>\SavedVariables\MauUndercut.lua`.
@@ -115,7 +115,7 @@ States: `idle → searching | waitingKey | waitingThrottle → ready → (post) 
 
 ## 7. Decisions made with the user
 
-- Addon and folder name: **MauUndercut** (project folder may stay `Nightfall`).
+- Addon and folder name: **MauUndercut**, living as `MauUndercut/` inside the MauAddons repository.
 - Durations 2 / 8 / 24 hours. Quantity defaults to the maximum available. Undercut 1 copper. Auto-skip below vendor price.
 - Scanner shows every item, deals first, with the vendor-flip profit next to them; results are not persisted.
 - The 15-minute scan cooldown is a server rule and must stay in the client too.

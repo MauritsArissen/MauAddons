@@ -25,7 +25,7 @@ Every post needs a real click because Blizzard protects the posting functions; t
 
 ## Install
 
-The folder that contains this README *is* the addon folder. The game has to see it under the name `MauUndercut` (the project folder itself can keep any name if you link it under that name, which is how it is set up here).
+The folder that contains this README *is* the addon folder. The game has to see it under the name `MauUndercut`.
 
 Either copy it to
 
@@ -36,7 +36,7 @@ C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns\MauUnde
 or keep it where it is and link it (edits show up in the game after `/reload`):
 
 ```powershell
-New-Item -ItemType Junction -Path "C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns\MauUndercut" -Target "C:\Users\Gamer\Documents\Nightfall"
+New-Item -ItemType Junction -Path "C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns\MauUndercut" -Target "C:\Users\Gamer\Documents\MauAddons\MauUndercut"
 ```
 
 Then enable *MauUndercut* in the AddOns list at the character screen.
