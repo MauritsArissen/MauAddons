@@ -15,9 +15,12 @@ Nothing is drawn on the minimap.
 
 ## Commands
 
-* `/mgm` - how many members are shown and whether you are broadcasting.
+* `/mgm` - status and this list of commands.
+* `/mgm hide` - stop sending your own position (others drop you at once). `/mgm show` resumes.
+* `/mgm disable` - stop showing other members on the map. `/mgm enable` shows them again.
 * `/mgm list` - the members, where they are and when they last updated.
-* `/mgm hide` - stop sending your own position (others drop you at once). `/mgm show` resumes. The choice is remembered.
+
+Both switches are remembered between sessions.
 * `/mgm test` - simulate three members around you so you can see it work without a second player. They walk around, one enters a dungeon after 20 s, one logs out after 30 s, one goes silent after 30 s and drops off 60 s later. Run it again to stop early.
 
 ## How it works

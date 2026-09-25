@@ -118,8 +118,12 @@ function NS.InitDB()
 	MauGuildMapDB = MauGuildMapDB or {}
 	MauGuildMapDB.settings = MauGuildMapDB.settings or {}
 	local s = MauGuildMapDB.settings
+	-- broadcast: send my own position to the guild.  display: draw the others.
 	if s.broadcast == nil then
 		s.broadcast = true
+	end
+	if s.display == nil then
+		s.display = true
 	end
 end
 
@@ -171,13 +175,30 @@ SlashCmdList.MAUGUILDMAP = function(msg)
 		settings.broadcast = true
 		NS.Comm:ForceSend()
 		NS.Print("Broadcasting on.")
+	elseif msg == "disable" then
+		settings.display = false
+		NS.Map:RequestRefresh()
+		NS.Print("Display off: other members are no longer drawn on the map. /mgm enable turns it back on.")
+	elseif msg == "enable" then
+		settings.display = true
+		NS.Map:RequestRefresh()
+		NS.Print("Display on.")
 	elseif msg == "list" then
 		NS.Roster:PrintList()
 	else
-		NS.Print("%d guild member(s) on the map, broadcasting %s%s.",
+		NS.Print("%d guild member(s) known%s. Sending my position: %s. Showing others: %s.",
 			NS.Roster:Count(),
-			settings.broadcast and "on" or "off",
-			IsInGuild() and "" or " (you are not in a guild)")
-		NS.Print("/mgm list - who is shown and where.  /mgm hide | show - stop or resume sending your position.  /mgm test - simulate a few members.")
+			IsInGuild() and "" or " (you are not in a guild)",
+			settings.broadcast and "|cff33ff33on|r" or "|cffff3333off|r",
+			settings.display and "|cff33ff33on|r" or "|cffff3333off|r")
+		local function Line(command, text)
+			print(string.format("  |cffffd100%s|r - %s", command, text))
+		end
+		Line("/mgm hide", "stop sending your position to the guild")
+		Line("/mgm show", "send your position again")
+		Line("/mgm disable", "stop showing other members on the map")
+		Line("/mgm enable", "show other members again")
+		Line("/mgm list", "who is known, where they are and when they last updated")
+		Line("/mgm test", "simulate three members for about two minutes (run again to stop)")
 	end
 end

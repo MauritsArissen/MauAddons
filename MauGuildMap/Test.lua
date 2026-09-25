@@ -81,6 +81,9 @@ function Test:Start()
 	self.t = 0
 	self.running = true
 	NS.Print("Test started: 3 test members around you in %s. Open the map (M) and hover their icons.", NS.MapName(origin.mapID) or "this zone")
+	if not NS.GetSettings().display then
+		NS.Print("Note: display is off, so nothing is drawn. /mgm enable turns it on.")
+	end
 	NS.Print("Testbob enters a dungeon at %d s, Testcarol logs out at %d s, Testalice goes silent at %d s and drops off %d s later.",
 		DUNGEON_AT, LOGOUT_AT, SILENT_AT, NS.TIMEOUT)
 	self.ticker = C_Timer.NewTicker(1, function()

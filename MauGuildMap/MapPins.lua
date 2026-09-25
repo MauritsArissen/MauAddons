@@ -52,7 +52,7 @@ function Provider:RefreshAllData(fromOnShow)
 	local map = self:GetMap()
 	map:RemoveAllPinsByTemplate(TEMPLATE)
 	local mapID = map:GetMapID()
-	if not mapID or NS.Roster:Count() == 0 then
+	if not mapID or NS.Roster:Count() == 0 or not NS.GetSettings().display then
 		return
 	end
 	for _, entry in NS.Roster:Iterate() do
