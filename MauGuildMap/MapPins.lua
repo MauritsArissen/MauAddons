@@ -88,7 +88,8 @@ local Pin = {}
 function Pin:OnLoad()
 	-- Constant on-screen size at every zoom level.
 	self:SetScalingLimits(1, 1.0, 1.0)
-	self:UseFrameLevelType("PIN_FRAME_LEVEL_GROUP_MEMBER")
+	-- Below quest markers, flight points stay underneath (see CLAUDE.md 5).
+	self:UseFrameLevelType("PIN_FRAME_LEVEL_AREA_POI")
 end
 
 function Pin:OnAcquired(entry)
@@ -102,6 +103,7 @@ function Pin:OnAcquired(entry)
 		self.Icon:SetTexCoord(0, 1, 0, 1)
 	end
 	self.Icon:SetDesaturated(entry.inInstance)
+	self.Ring:SetVertexColor(NS.ClassColor(entry.class))
 	self:SetAlpha(entry.inInstance and 0.8 or 1)
 end
 

@@ -2,8 +2,27 @@
 	<!-- One guild member on the world map.  Mouse motion is enabled so the map
 	     canvas wires OnMouseEnter/OnMouseLeave from MauGuildMapPinMixin. -->
 	<Frame name="MauGuildMapPinTemplate" mixin="MauGuildMapPinMixin" enableMouseMotion="true" virtual="true">
-		<Size x="22" y="22"/>
+		<Size x="24" y="24"/>
 		<Layers>
+			<Layer level="BACKGROUND">
+				<!-- Class-coloured ring: a solid white texture clipped to a circle 2 px
+				     larger than the icon, tinted in MauGuildMapPinMixin:OnAcquired. -->
+				<Texture parentKey="Ring" file="Interface\Buttons\WHITE8X8">
+					<Size x="24" y="24"/>
+					<Anchors>
+						<Anchor point="CENTER"/>
+					</Anchors>
+				</Texture>
+				<MaskTexture parentKey="RingMask" file="Interface\CharacterFrame\TempPortraitAlphaMask" hWrapMode="CLAMPTOBLACKADDITIVE" vWrapMode="CLAMPTOBLACKADDITIVE">
+					<Anchors>
+						<Anchor point="TOPLEFT" relativeKey="$parent.Ring"/>
+						<Anchor point="BOTTOMRIGHT" relativeKey="$parent.Ring"/>
+					</Anchors>
+					<MaskedTextures>
+						<MaskedTexture childKey="Ring"/>
+					</MaskedTextures>
+				</MaskTexture>
+			</Layer>
 			<Layer level="ARTWORK">
 				<Texture parentKey="Icon">
 					<Size x="20" y="20"/>
