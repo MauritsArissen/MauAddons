@@ -67,7 +67,9 @@ end
 function Provider:OnShow()
 	if not self.ticker then
 		self.ticker = C_Timer.NewTicker(5, function()
-			self:RefreshAllData()
+			if not NS.IsBackground() then
+				self:RefreshAllData()
+			end
 		end)
 	end
 end
@@ -152,7 +154,7 @@ end
 
 -- Roster changed: redraw soon if the map is open (coalesced).
 function Map:RequestRefresh()
-	if not self.provider or self.refreshQueued or not WorldMapFrame or not WorldMapFrame:IsShown() then
+	if not self.provider or self.refreshQueued or not WorldMapFrame or not WorldMapFrame:IsShown() or NS.IsBackground() then
 		return
 	end
 	self.refreshQueued = true

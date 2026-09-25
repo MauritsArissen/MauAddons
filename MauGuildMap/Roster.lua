@@ -111,6 +111,11 @@ function Roster:RemoveTestEntries()
 end
 
 function Roster:Expire()
+	-- Messages are held back while the game is in the background (Comm.lua),
+	-- so nobody may be timed out for not arriving.
+	if NS.IsBackground() then
+		return
+	end
 	local now = GetTime()
 	for name, entry in pairs(self.members) do
 		if now - (entry.seen or 0) > NS.TIMEOUT then

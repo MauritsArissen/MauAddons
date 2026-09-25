@@ -21,6 +21,39 @@ NS.HEARTBEAT = 20
 NS.TIMEOUT = 60
 
 -------------------------------------------------------------------------------
+-- Background detection
+--
+-- The client has no "window lost focus" API, but it caps the frame rate hard
+-- while the window is in the background (the "Max Background FPS" setting,
+-- 8 by default).  A smoothed frame time above BACKGROUND_FRAME_TIME therefore
+-- means alt-tabbed, or a game that is crawling for another reason; either
+-- way the addon should do as little as possible: no position sampling, no
+-- map work, incoming messages queued and applied when the game is back.
+-------------------------------------------------------------------------------
+
+local BACKGROUND_FRAME_TIME = 0.1
+local FRAME_TIME_SMOOTHING = 0.1
+
+local activity = CreateFrame("Frame")
+local averageFrameTime = 1 / 60
+local inBackground = false
+
+activity:SetScript("OnUpdate", function(_, elapsed)
+	averageFrameTime = averageFrameTime + (elapsed - averageFrameTime) * FRAME_TIME_SMOOTHING
+	local background = averageFrameTime > BACKGROUND_FRAME_TIME
+	if background ~= inBackground then
+		inBackground = background
+		if not background and NS.Comm and NS.Comm.OnForeground then
+			NS.Comm:OnForeground()
+		end
+	end
+end)
+
+function NS.IsBackground()
+	return inBackground
+end
+
+-------------------------------------------------------------------------------
 -- Helpers
 -------------------------------------------------------------------------------
 

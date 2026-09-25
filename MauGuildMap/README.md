@@ -13,6 +13,8 @@ Every member with the addon sends a tiny position message to the guild every few
 
 Nothing is drawn on the minimap.
 
+While the game is in the background (alt-tabbed) the addon goes quiet: it stops sampling your position, only sends a heartbeat now and then so you stay on your guild mates' maps, and holds incoming updates until the game is back.
+
 ## Commands
 
 * `/mgm` - status and this list of commands.
