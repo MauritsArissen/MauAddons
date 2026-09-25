@@ -13,6 +13,26 @@ NS.Map = Map
 
 local TEMPLATE = "MauGuildMapPinTemplate"
 local FALLBACK_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
+-- Fraction of the race icon cropped away in total (half on each side), so the
+-- rim of Blizzard's round icon stays outside the visible square.
+local ICON_ZOOM = 0.30
+
+-- Show an atlas zoomed in: take the atlas region from the client and shrink
+-- the texture coordinates towards its centre.  Falls back to the plain atlas
+-- when the region cannot be read.
+local function SetZoomedAtlas(texture, atlas)
+	local info = C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(atlas)
+	local file = info and (info.file or info.filename)
+	if not file or not info.leftTexCoord then
+		texture:SetAtlas(atlas)
+		return
+	end
+	local left, right, top, bottom = info.leftTexCoord, info.rightTexCoord, info.topTexCoord, info.bottomTexCoord
+	local insetX = (right - left) * ICON_ZOOM / 2
+	local insetY = (bottom - top) * ICON_ZOOM / 2
+	texture:SetTexture(file)
+	texture:SetTexCoord(left + insetX, right - insetX, top + insetY, bottom - insetY)
+end
 
 -- Globals referenced by the XML template (filled in TryInit).
 MauGuildMapPinMixin = {}
@@ -75,9 +95,11 @@ function Pin:OnAcquired(entry)
 	self.entry = entry
 	local atlas = NS.RaceAtlas(entry.race, entry.sex)
 	if atlas then
-		self.Icon:SetAtlas(atlas)
+		SetZoomedAtlas(self.Icon, atlas)
 	else
+		-- Pins are pooled; undo any crop left by a previous member.
 		self.Icon:SetTexture(FALLBACK_ICON)
+		self.Icon:SetTexCoord(0, 1, 0, 1)
 	end
 	self.Icon:SetDesaturated(entry.inInstance)
 	self:SetAlpha(entry.inInstance and 0.8 or 1)
