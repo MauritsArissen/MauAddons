@@ -11,6 +11,16 @@
 						<Anchor point="CENTER"/>
 					</Anchors>
 				</Texture>
+				<!-- Circular alpha mask, the same one Blizzard uses for round portraits. -->
+				<MaskTexture parentKey="CircleMask" file="Interface\CharacterFrame\TempPortraitAlphaMask" hWrapMode="CLAMPTOBLACKADDITIVE" vWrapMode="CLAMPTOBLACKADDITIVE">
+					<Anchors>
+						<Anchor point="TOPLEFT" relativeKey="$parent.Icon"/>
+						<Anchor point="BOTTOMRIGHT" relativeKey="$parent.Icon"/>
+					</Anchors>
+					<MaskedTextures>
+						<MaskedTexture childKey="Icon"/>
+					</MaskedTextures>
+				</MaskTexture>
 			</Layer>
 		</Layers>
 	</Frame>
