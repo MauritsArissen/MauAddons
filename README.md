@@ -33,4 +33,16 @@ Then enable the addon in the AddOns list at the character screen.
 
 ## Development
 
-There is no build step. Edit the Lua files in place and run `/reload` in game. See the `CLAUDE.md` inside each addon folder for the target client, the APIs used, and how to verify changes.
+There is no build step for playing: edit the Lua files in place and run `/reload` in game. See the `CLAUDE.md` inside each addon folder for the target client, the APIs used, and how to verify changes.
+
+## Releases
+
+`versions\` holds one zip per released addon version, ready to upload to CurseForge. Each zip contains only the files the addon needs (the TOC and the files it lists) inside a folder named after the addon, so extracting it into `Interface\AddOns` gives a working addon.
+
+Build one with PowerShell from the repository root:
+
+```powershell
+.\build.ps1 MauGuildMap
+```
+
+The version comes from the `## Version:` line in the addon's TOC, so bump that first.
