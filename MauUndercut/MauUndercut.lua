@@ -498,6 +498,11 @@ SLASH_MAUUNDERCUT1 = "/mauundercut"
 SLASH_MAUUNDERCUT2 = "/mu"
 SlashCmdList.MAUUNDERCUT = function(msg)
 	msg = (msg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+	if msg == "prices" then
+		local count = NS.Prices and NS.Prices:Count() or 0
+		NS.Print("%s item prices in the database.", NS.FormatNumber(count))
+		return
+	end
 	local id = (msg == "scan") and "MauUndercutScan" or "MauUndercutPost"
 	if not NS.SelectTab(id) then
 		NS.Print("Open the auction house, then click the %s or %s tab (or use /mu and /mu scan).", NS.TAB_TEXT, NS.SCAN_TAB_TEXT)

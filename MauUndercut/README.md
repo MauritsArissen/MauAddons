@@ -57,7 +57,7 @@ New-Item -ItemType Junction -Path "C:\Program Files (x86)\World of Warcraft\_cla
 
 Then enable *MauUndercut* in the AddOns list at the character screen.
 
-`/mu` (or `/mauundercut`) jumps to the posting tab while the auction house is open, `/mu scan` to the scanner tab.
+`/mu` (or `/mauundercut`) jumps to the posting tab while the auction house is open, `/mu scan` to the scanner tab. `/mu prices` prints how many item prices the database holds.
 
 ## Notes and limits
 
@@ -70,6 +70,7 @@ Then enable *MauUndercut* in the AddOns list at the character screen.
 * If Auctionator is installed, the tabs are added through its LibAHTab so all extra tabs line up next to each other.
 * Settings (duration, undercut, scan filters), the prices you last posted and the price database live in `WTF\Account\<account>\SavedVariables\MauUndercut.lua`. The database keeps two numbers per item (price and time), so it stays small.
 * The price database records the lowest listing, including your own auctions. Equipment variants (suffixes, item levels) share one price per item ID.
+* Forever beta builds from 2026-09-17 up to and including 1.60.1.69913 had a client bug where addon saved data was written but never read back at login, for every addon. Anything scanned on those builds was lost at the next logout. Build 1.60.1.70009 (2026-09-25) reads it again; `/mu prices` is the quick check.
 
 ## Files
 
