@@ -21,7 +21,7 @@ Nothing is drawn on the minimap.
 * `/mgm list` - the members, where they are and when they last updated.
 
 Both switches are remembered between sessions.
-* `/mgm test` - simulate three members around you so you can see it work without a second player. They walk around, one enters a dungeon after 20 s, one logs out after 30 s, one goes silent after 30 s and drops off 60 s later. Run it again to stop early.
+* `/mgm test` - simulate a guild of eight spread over the Eastern Kingdoms so you can see it work without a second player: two idle in cities, three inside dungeons (at the real entrances when the client knows them), three wandering through zones. After a minute one logs out and one goes silent and times out. Run it again to stop early.
 
 ## How it works
 
