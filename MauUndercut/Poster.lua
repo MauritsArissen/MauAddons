@@ -34,7 +34,10 @@ local SORTS_BUYOUT = { { sortOrder = SORT_ORDER_BUYOUT, reverseSort = false } }
 
 local MAX_SEARCH_ATTEMPTS = 4
 local MAX_EXTRA_PAGES = 5
-local SEARCH_TIMEOUT = 10
+-- Seconds to wait for an answer before the query is sent again.  The server
+-- normally answers within a second or two; a query it silently ignored (see
+-- BeginSearch) never answers at all, so this must stay short.
+local SEARCH_TIMEOUT = 6
 
 local EVENTS = {
 	"COMMODITY_SEARCH_RESULTS_UPDATED",
@@ -266,6 +269,34 @@ function Poster:BeginSearch()
 	entry.isCommodity = info.isCommodity and true or false
 	entry.isEquipment = info.isEquipment and true or false
 
+	-- The key the query is sent with.  Commodity and equipment searches go by
+	-- item ID (Blizzard: "ItemKey should have its iLVL and suffix cleared"),
+	-- so for equipment it differs from the bag item's own key.  The client
+	-- silently ignores a search for a key whose info it has not cached yet,
+	-- which is what made green gear with a random suffix time out and fall
+	-- back to vendor price x2: the info for the full key was there, the info
+	-- for the cleared key was not.  Blizzard's own sell frame asks for the
+	-- cleared key's info before querying; do the same and wait for it.
+	local key = entry.itemKey
+	if entry.isCommodity or entry.isEquipment then
+		entry.searchKey = C_AuctionHouse.MakeItemKey(key.itemID)
+	else
+		entry.searchKey = C_AuctionHouse.MakeItemKey(key.itemID, key.itemLevel or 0, key.itemSuffix or 0, key.battlePetSpeciesID or 0)
+	end
+	if not NS.SameItemKey(entry.searchKey, key) and not C_AuctionHouse.GetItemKeyInfo(entry.searchKey) then
+		entry.keyWaits = (entry.keyWaits or 0) + 1
+		if entry.keyWaits > 20 then
+			self:SearchFailed("Could not load auction data for this item.")
+			return
+		end
+		self.state = "waitingKey"
+		self:Notify()
+		self:SetTimer(0.5, function()
+			self:BeginSearch()
+		end)
+		return
+	end
+
 	if not C_AuctionHouse.IsThrottledMessageSystemReady() then
 		self.throttleWaits = 0
 		self:WaitForThrottle()
@@ -302,17 +333,14 @@ function Poster:SendSearch()
 	self.throttleWaits = 0
 	entry.searchAttempts = (entry.searchAttempts or 0) + 1
 
-	local key = entry.itemKey
+	self.expectedKey = entry.searchKey
 	if entry.isCommodity then
-		self.expectedKey = C_AuctionHouse.MakeItemKey(key.itemID)
 		C_AuctionHouse.SendSearchQuery(self.expectedKey, SORTS_PRICE, true)
 	elseif entry.isEquipment then
-		-- Sell searches for equipment want the item level and suffix cleared;
-		-- the results carry the real keys so we can match the exact variant.
-		self.expectedKey = C_AuctionHouse.MakeItemKey(key.itemID)
+		-- Sell search by item ID: the results carry the real keys (item level
+		-- and suffix) so the exact variant can still be matched.
 		C_AuctionHouse.SendSellSearchQuery(self.expectedKey, SORTS_BUYOUT, true)
 	else
-		self.expectedKey = C_AuctionHouse.MakeItemKey(key.itemID, key.itemLevel or 0, key.itemSuffix or 0, key.battlePetSpeciesID or 0)
 		C_AuctionHouse.SendSearchQuery(self.expectedKey, SORTS_BUYOUT, true)
 	end
 
@@ -320,18 +348,19 @@ function Poster:SendSearch()
 	self:Notify()
 	self:SetTimer(SEARCH_TIMEOUT, function()
 		if self.state == "searching" and self.current == entry then
-			self:SearchFailed("No answer from the auction house.")
+			-- No answer: the query may have been ignored, send it again.
+			self:RetrySearch("No answer from the auction house.")
 		end
 	end)
 end
 
-function Poster:RetrySearch()
+function Poster:RetrySearch(reason)
 	local entry = self.current
 	if not entry or not self.running then
 		return
 	end
 	if (entry.searchAttempts or 0) >= MAX_SEARCH_ATTEMPTS then
-		self:SearchFailed("The auction house returned no usable results.")
+		self:SearchFailed(reason or "The auction house returned no usable results.")
 		return
 	end
 	self.state = "searching"
@@ -420,13 +449,17 @@ function Poster:ProcessItemResults(itemKey)
 
 	if not bestExact and not full and (entry.extraPages or 0) < MAX_EXTRA_PAGES then
 		entry.extraPages = (entry.extraPages or 0) + 1
-		C_AuctionHouse.RequestMoreItemSearchResults(itemKey)
-		self:SetTimer(SEARCH_TIMEOUT, function()
-			if self.state == "searching" and self.current == entry then
-				self:SearchFailed("No answer from the auction house.")
-			end
-		end)
-		return
+		-- Returns true when everything is already loaded; then no further
+		-- results event will come and what we have is all there is.
+		local alreadyFull = C_AuctionHouse.RequestMoreItemSearchResults(itemKey)
+		if not alreadyFull then
+			self:SetTimer(SEARCH_TIMEOUT, function()
+				if self.state == "searching" and self.current == entry then
+					self:RetrySearch("No answer from the auction house.")
+				end
+			end)
+			return
+		end
 	end
 
 	if bestExact then
@@ -694,8 +727,18 @@ Poster:SetScript("OnEvent", function(self, event, ...)
 
 	elseif event == "ITEM_SEARCH_RESULTS_UPDATED" or event == "ITEM_SEARCH_RESULTS_ADDED" then
 		local itemKey = ...
-		if self.state == "searching" and self.current and not self.current.isCommodity and NS.SameItemKey(itemKey, self.expectedKey) then
-			self:ProcessItemResults(itemKey)
+		if self.state == "searching" and self.current and not self.current.isCommodity and self.expectedKey and itemKey then
+			-- Equipment searches go by item ID, so match on that alone; the
+			-- level and suffix in the event key are not ours to care about.
+			local matches
+			if self.current.isEquipment then
+				matches = itemKey.itemID == self.expectedKey.itemID
+			else
+				matches = NS.SameItemKey(itemKey, self.expectedKey)
+			end
+			if matches then
+				self:ProcessItemResults(itemKey)
+			end
 		end
 
 	elseif event == "ITEM_KEY_ITEM_INFO_RECEIVED" then

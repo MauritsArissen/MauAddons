@@ -2,7 +2,7 @@
 ## Title: MauUndercut
 ## Notes: Bulk auction posting with automatic lowest-price lookup and undercut, a full auction house scanner, a persistent price database with a tooltip line, and crafting profit in the professions window.
 ## Author: Gamer
-## Version: 0.7.0
+## Version: 0.7.1
 ## SavedVariables: MauUndercutDB
 ## IconTexture: Interface\Icons\INV_Misc_Coin_02
 ## X-Game: World of Warcraft: Forever (1.60.x)
