@@ -37,6 +37,7 @@ NS.DEFAULTS = {
 	showHealth = true,
 	showPower = true,
 	showXP = true,
+	detailedTooltip = false,
 }
 
 -------------------------------------------------------------------------------
@@ -220,6 +221,10 @@ function NS.PowerInfo(powerType)
 		return name, color.r or 1, color.g or 1, color.b or 1
 	end
 	return name, 1, 1, 1
+end
+
+function NS.Colorize(text, r, g, b)
+	return string.format("|cff%02x%02x%02x%s|r", (r or 1) * 255, (g or 1) * 255, (b or 1) * 255, text)
 end
 
 -- Green above half, yellow above a quarter, red below.

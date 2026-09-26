@@ -59,6 +59,7 @@ function Options:Register()
 	Checkbox("showHealth", "Show health", "Show a member's health in the tooltip, if they share it.")
 	Checkbox("showPower", "Show mana, rage or energy", "Show a member's mana, rage, energy or focus in the tooltip, if they share it.")
 	Checkbox("showXP", "Show experience", "Show a member's experience towards the next level in the tooltip, if they share it.")
+	Checkbox("detailedTooltip", "Detailed tooltip", "Off: three lines with percentages. On: one line per value with the actual numbers, plus zone details and the age of the last update.")
 
 	Header(layout, "Privacy: what you send to the guild")
 	Checkbox("broadcast", "Send my position", "Send your position to guild members who run MauGuildMap. Off means nobody sees you on their map.")

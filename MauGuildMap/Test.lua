@@ -294,30 +294,21 @@ function Test:Start()
 	self.t = 0
 	self.running = true
 
-	NS.Print("Test started with %d test members across the Eastern Kingdoms. Open the map (M) and zoom out to the continent.", #fakes)
+	-- One line per group, not one per member.
+	local groups = { city = {}, dungeon = {}, wander = {} }
 	for _, fake in ipairs(fakes) do
-		local where
-		if fake.role == "city" then
-			where = "idle in " .. fake.zone
-		elseif fake.role == "wander" then
-			where = "wandering through " .. fake.zone
-		else
-			where = "inside " .. fake.instance .. " (entrance in " .. fake.zone .. ")"
-		end
-		local hidden = {}
-		if not fake.shareHealth then hidden[#hidden + 1] = "health" end
-		if not fake.sharePower then hidden[#hidden + 1] = "power" end
-		if not fake.shareXP then hidden[#hidden + 1] = "experience" end
-		NS.Print("  %s, level %d %s %s: %s%s", fake.name, fake.level, NS.RaceName(fake.race), NS.ClassName(fake.class, fake.sex), where,
-			#hidden > 0 and (" (does not share " .. table.concat(hidden, " and ") .. ")") or "")
+		local place = (fake.role == "dungeon") and fake.instance or fake.zone
+		groups[fake.role][#groups[fake.role] + 1] = string.format("%s (%s)", fake.name, place)
 	end
+	NS.Print("Test: %d members on the Eastern Kingdoms map for about %d s.", #fakes, SILENT_AT + NS.TIMEOUT + 8)
+	NS.Print("Cities: %s. Dungeons: %s. Wandering: %s.", table.concat(groups.city, ", "), table.concat(groups.dungeon, ", "), table.concat(groups.wander, ", "))
+	NS.Print("%s dies at %d s, %s logs out at %d s, %s goes silent at %d s. Testfrank shares no health, Testdave no experience.",
+		DEATH_NAME, DEATH_AT, LOGOUT_NAME, LOGOUT_AT, SILENT_NAME, SILENT_AT)
 	if fallbackDungeons then
-		NS.Print("The encounter journal had no entrance data for some dungeons, so those members sit at a zone centre instead.")
+		NS.Print("No entrance data in the encounter journal for some dungeons; those members sit at a zone centre.")
 	end
-	NS.Print("%s dies at %d s and gets up at %d s; %s logs out at %d s; %s stops sending at %d s and is dropped %d s later.",
-		DEATH_NAME, DEATH_AT, REVIVE_AT, LOGOUT_NAME, LOGOUT_AT, SILENT_NAME, SILENT_AT, NS.TIMEOUT)
 	if not NS.GetSettings().display then
-		NS.Print("Note: the map display is off in the options, so nothing is drawn.")
+		NS.Print("The map display is off in the options, so nothing is drawn.")
 	end
 
 	self.ticker = C_Timer.NewTicker(1, function()
@@ -393,10 +384,8 @@ function Test:Tick()
 		if fake.name == DEATH_NAME then
 			if t == DEATH_AT then
 				fake.dead = true
-				NS.Print("%s died in %s; her icon shows a skull where it happened.", fake.name, fake.zone)
 			elseif t == REVIVE_AT then
 				fake.dead = false
-				NS.Print("%s is back on her feet.", fake.name)
 			end
 		end
 		if fake.name == LOGOUT_NAME and t == LOGOUT_AT and fake.alive then
@@ -405,7 +394,6 @@ function Test:Tick()
 		end
 		if fake.name == SILENT_NAME and t == SILENT_AT and not fake.silent then
 			fake.silent = true
-			NS.Print("%s stopped sending; removed after %d s without an update.", fake.name, NS.TIMEOUT)
 		end
 
 		if fake.alive and not fake.silent then

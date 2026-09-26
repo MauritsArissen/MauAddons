@@ -99,9 +99,6 @@ function Roster:Remove(name, reason)
 	end
 	self.members[name] = nil
 	self.count = self.count - 1
-	if entry.test and reason then
-		NS.Print("%s removed from the map (%s).", name, reason)
-	end
 	self:Changed()
 	return true
 end
