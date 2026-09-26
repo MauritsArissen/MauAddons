@@ -60,7 +60,9 @@ local function ComputeWorldPosition(entry)
 	end
 end
 
--- data: mapID, x, y (0-1), level, race, sex, class, inInstance, instance, test
+-- data: mapID, x, y (0-1), level, race, sex, class, inInstance, dead,
+-- instance, hp, hpMax, power, powerMax, powerType, xp, xpMax (the stats are
+-- nil when the sender does not share them), test
 function Roster:Update(name, data)
 	local entry = self.members[name]
 	if not entry then
@@ -77,7 +79,11 @@ function Roster:Update(name, data)
 	entry.sex = data.sex or 2
 	entry.class = data.class or ""
 	entry.inInstance = data.inInstance and true or false
+	entry.dead = data.dead and true or false
 	entry.instance = data.instance or ""
+	entry.hp, entry.hpMax = data.hp, data.hpMax
+	entry.power, entry.powerMax, entry.powerType = data.power, data.powerMax, data.powerType
+	entry.xp, entry.xpMax = data.xp, data.xpMax
 	entry.test = data.test or nil
 	entry.seen = GetTime()
 	if moved or not entry.world then
@@ -222,8 +228,12 @@ function Roster:PrintList()
 		local e = self.members[name]
 		local r, g, b = NS.ClassColor(e.class)
 		local colored = string.format("|cff%02x%02x%02x%s|r", r * 255, g * 255, b * 255, name)
-		NS.Print("%s - level %d %s %s - %s - updated %s%s", colored, e.level, NS.RaceName(e.race), NS.ClassName(e.class, e.sex),
-			self:Describe(e), NS.FormatAge(GetTime() - (e.seen or 0)), e.test and " (test)" or "")
+		local health = ""
+		if e.hp and e.hpMax and e.hpMax > 0 then
+			health = string.format(" - %d%% health", e.hp / e.hpMax * 100 + 0.5)
+		end
+		NS.Print("%s - level %d %s %s%s%s - %s - updated %s%s", colored, e.level, NS.RaceName(e.race), NS.ClassName(e.class, e.sex),
+			e.dead and " - dead" or "", health, self:Describe(e), NS.FormatAge(GetTime() - (e.seen or 0)), e.test and " (test)" or "")
 	end
 end
 

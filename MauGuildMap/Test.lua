@@ -1,16 +1,20 @@
--- MauGuildMap test mode: /mgm test
+-- MauGuildMap test mode: /mgm test (not announced anywhere; a development aid)
 --
 -- Simulates a guild spread over the Eastern Kingdoms: members idling in
 -- cities, members inside dungeons (drawn at the real entrance when the
--- encounter journal knows it), and members wandering through zones.  Their
--- messages go through the same decoder and roster as real ones, so the wire
--- format, the map pins on zone/continent/world maps, the entrance display,
--- the goodbye message and the timeout are all exercised without a second
--- player.  Zones, cities and entrances are looked up from the client's map
--- data at start, nothing is hard-coded except names to look for.
+-- encounter journal knows it), and members wandering through zones, each
+-- with health, power and experience that move about, some of them sharing
+-- less than others, one of them dying and getting back up.  Their messages go
+-- through the same decoder and roster as real ones, so the wire format, the
+-- map pins on zone/continent/world maps, the tooltips, the entrance display,
+-- the death marker, the goodbye message and the timeout are all exercised
+-- without a second player.  Zones, cities and entrances are looked up from
+-- the client's map data at start, nothing is hard-coded except names to look
+-- for.
 --
 -- Timeline (seconds after start):
 --    0  everyone appears; wanderers move every 2 s, the rest send heartbeats
+--   45  Testgwen dies where she stands (skull), gets up again at 75
 --   60  one city idler logs out (goodbye) and disappears at once
 --   60  one wanderer stops sending; dropped after NS.TIMEOUT seconds
 --  end  a few seconds after that the test stops and removes its members
@@ -39,14 +43,15 @@ local WANDER_ZONES = {
 }
 local PREFERRED_DUNGEONS = { "The Deadmines", "Shadowfang Keep", "Scarlet Monastery", "Blackrock Depths", "The Stockade", "Gnomeregan" }
 
+-- share: which stats the member sends (defaults to all).
 local MEMBERS = {
 	Alliance = {
 		{ name = "Testalice", race = "NightElf", sex = 3, class = "HUNTER", level = 23, role = "wander" },
 		{ name = "Testbob", race = "Dwarf", sex = 2, class = "PALADIN", level = 40, role = "dungeon" },
 		{ name = "Testcarol", race = "Human", sex = 3, class = "MAGE", level = 60, role = "city" },
-		{ name = "Testdave", race = "Gnome", sex = 2, class = "WARLOCK", level = 31, role = "wander" },
+		{ name = "Testdave", race = "Gnome", sex = 2, class = "WARLOCK", level = 31, role = "wander", share = { xp = false } },
 		{ name = "Testerin", race = "Human", sex = 3, class = "PRIEST", level = 47, role = "dungeon" },
-		{ name = "Testfrank", race = "Dwarf", sex = 2, class = "WARRIOR", level = 55, role = "city" },
+		{ name = "Testfrank", race = "Dwarf", sex = 2, class = "WARRIOR", level = 55, role = "city", share = { health = false, power = false } },
 		{ name = "Testgwen", race = "NightElf", sex = 3, class = "ROGUE", level = 19, role = "wander" },
 		{ name = "Testhank", race = "Human", sex = 2, class = "WARRIOR", level = 36, role = "dungeon" },
 	},
@@ -54,16 +59,22 @@ local MEMBERS = {
 		{ name = "Testalice", race = "Troll", sex = 3, class = "HUNTER", level = 23, role = "wander" },
 		{ name = "Testbob", race = "Orc", sex = 2, class = "WARRIOR", level = 40, role = "dungeon" },
 		{ name = "Testcarol", race = "Scourge", sex = 3, class = "MAGE", level = 60, role = "city" },
-		{ name = "Testdave", race = "Tauren", sex = 2, class = "DRUID", level = 31, role = "wander" },
+		{ name = "Testdave", race = "Tauren", sex = 2, class = "DRUID", level = 31, role = "wander", share = { xp = false } },
 		{ name = "Testerin", race = "Scourge", sex = 3, class = "PRIEST", level = 47, role = "dungeon" },
-		{ name = "Testfrank", race = "Orc", sex = 2, class = "SHAMAN", level = 55, role = "city" },
+		{ name = "Testfrank", race = "Orc", sex = 2, class = "SHAMAN", level = 55, role = "city", share = { health = false, power = false } },
 		{ name = "Testgwen", race = "Troll", sex = 3, class = "ROGUE", level = 19, role = "wander" },
 		{ name = "Testhank", race = "Tauren", sex = 2, class = "WARRIOR", level = 36, role = "dungeon" },
 	},
 }
 
+-- Enum.PowerType numbers: 0 mana, 1 rage, 3 energy.
+local POWER_BY_CLASS = { WARRIOR = 1, ROGUE = 3 }
+
+local DEATH_AT = 45
+local REVIVE_AT = 75
 local LOGOUT_AT = 60
 local SILENT_AT = 60
+local DEATH_NAME = "Testgwen"
 local LOGOUT_NAME = "Testcarol"
 local SILENT_NAME = "Testalice"
 local STEP = 0.004
@@ -218,8 +229,18 @@ function Test:Build()
 
 	local fakes = {}
 	local cityIndex, wanderIndex, dungeonIndex = 0, 0, 0
-	for _, def in ipairs(defs) do
-		local fake = { name = def.name, race = def.race, sex = def.sex, class = def.class, level = def.level, role = def.role, alive = true, silent = false }
+	for i, def in ipairs(defs) do
+		local share = def.share or {}
+		local fake = {
+			name = def.name, race = def.race, sex = def.sex, class = def.class, level = def.level, role = def.role,
+			alive = true, silent = false, dead = false, phase = i,
+			shareHealth = share.health ~= false, sharePower = share.power ~= false, shareXP = share.xp ~= false,
+			hpMax = 100 + def.level * 22,
+			powerType = POWER_BY_CLASS[def.class] or 0,
+			xpMax = def.level * 850,
+			xp = math.floor(def.level * 850 * (0.2 + 0.6 * math.random())),
+		}
+		fake.powerMax = (fake.powerType == 0) and (200 + def.level * 16) or 100
 		if def.role == "city" then
 			cityIndex = cityIndex + 1
 			local zone = cityZones[cityIndex]
@@ -283,14 +304,20 @@ function Test:Start()
 		else
 			where = "inside " .. fake.instance .. " (entrance in " .. fake.zone .. ")"
 		end
-		NS.Print("  %s, level %d %s %s: %s", fake.name, fake.level, NS.RaceName(fake.race), NS.ClassName(fake.class, fake.sex), where)
+		local hidden = {}
+		if not fake.shareHealth then hidden[#hidden + 1] = "health" end
+		if not fake.sharePower then hidden[#hidden + 1] = "power" end
+		if not fake.shareXP then hidden[#hidden + 1] = "experience" end
+		NS.Print("  %s, level %d %s %s: %s%s", fake.name, fake.level, NS.RaceName(fake.race), NS.ClassName(fake.class, fake.sex), where,
+			#hidden > 0 and (" (does not share " .. table.concat(hidden, " and ") .. ")") or "")
 	end
 	if fallbackDungeons then
 		NS.Print("The encounter journal had no entrance data for some dungeons, so those members sit at a zone centre instead.")
 	end
-	NS.Print("%s logs out at %d s; %s stops sending at %d s and is dropped %d s later.", LOGOUT_NAME, LOGOUT_AT, SILENT_NAME, SILENT_AT, NS.TIMEOUT)
+	NS.Print("%s dies at %d s and gets up at %d s; %s logs out at %d s; %s stops sending at %d s and is dropped %d s later.",
+		DEATH_NAME, DEATH_AT, REVIVE_AT, LOGOUT_NAME, LOGOUT_AT, SILENT_NAME, SILENT_AT, NS.TIMEOUT)
 	if not NS.GetSettings().display then
-		NS.Print("Note: display is off, so nothing is drawn. /mgm enable turns it on.")
+		NS.Print("Note: the map display is off in the options, so nothing is drawn.")
 	end
 
 	self.ticker = C_Timer.NewTicker(1, function()
@@ -310,7 +337,30 @@ function Test:Stop(reason)
 	NS.Print("Test %s; test members removed.", reason or "stopped")
 end
 
+-- Health, power and experience that move about a bit.
+local function UpdateStats(fake, t)
+	if fake.dead then
+		fake.hp = 0
+		fake.power = 0
+		return
+	end
+	if fake.role == "wander" then
+		-- In and out of fights: health swings, power swings the other way,
+		-- experience creeps up.
+		fake.hp = math.floor(fake.hpMax * (0.55 + 0.45 * math.sin(t / 9 + fake.phase)))
+		fake.power = math.floor(fake.powerMax * (0.5 + 0.5 * math.cos(t / 7 + fake.phase)))
+		fake.xp = math.min(fake.xpMax - 1, fake.xp + math.floor(fake.xpMax * 0.004))
+	elseif fake.role == "dungeon" then
+		fake.hp = math.floor(fake.hpMax * (0.7 + 0.3 * math.sin(t / 11 + fake.phase)))
+		fake.power = math.floor(fake.powerMax * (0.3 + 0.7 * math.abs(math.cos(t / 13 + fake.phase))))
+	else
+		fake.hp = fake.hpMax
+		fake.power = fake.powerMax
+	end
+end
+
 local function Send(fake)
+	local atMaxLevel = fake.level >= NS.MaxLevel()
 	local text = NS.Comm:Encode({
 		mapID = fake.mapID,
 		x = fake.x,
@@ -319,7 +369,14 @@ local function Send(fake)
 		race = fake.race,
 		sex = fake.sex,
 		class = fake.class,
-		flag = fake.instance and "I" or "O",
+		flags = (fake.instance and "I" or "O") .. (fake.dead and "D" or ""),
+		hp = fake.shareHealth and fake.hp or nil,
+		hpMax = fake.shareHealth and fake.hpMax or nil,
+		power = fake.sharePower and fake.power or nil,
+		powerMax = fake.sharePower and fake.powerMax or nil,
+		powerType = fake.sharePower and fake.powerType or nil,
+		xp = (fake.shareXP and not atMaxLevel) and fake.xp or nil,
+		xpMax = (fake.shareXP and not atMaxLevel) and fake.xpMax or nil,
 		instance = fake.instance or "",
 	})
 	NS.Comm:OnMessage(text, fake.name, true)
@@ -333,6 +390,15 @@ function Test:Tick()
 	self.t = t + 1
 
 	for _, fake in ipairs(self.fakes) do
+		if fake.name == DEATH_NAME then
+			if t == DEATH_AT then
+				fake.dead = true
+				NS.Print("%s died in %s; her icon shows a skull where it happened.", fake.name, fake.zone)
+			elseif t == REVIVE_AT then
+				fake.dead = false
+				NS.Print("%s is back on her feet.", fake.name)
+			end
+		end
 		if fake.name == LOGOUT_NAME and t == LOGOUT_AT and fake.alive then
 			fake.alive = false
 			NS.Comm:OnMessage("B", fake.name, true)
@@ -343,15 +409,18 @@ function Test:Tick()
 		end
 
 		if fake.alive and not fake.silent then
-			if fake.role == "wander" then
+			UpdateStats(fake, t)
+			local moving = fake.role == "wander" and not fake.dead
+			if moving then
 				-- Moving members report every SEND_INTERVAL seconds, like the real thing.
 				if t % NS.SEND_INTERVAL == 0 then
 					fake.x = Clamp(fake.x + (math.random() - 0.5) * STEP * NS.SEND_INTERVAL)
 					fake.y = Clamp(fake.y + (math.random() - 0.5) * STEP * NS.SEND_INTERVAL)
 					Send(fake)
 				end
-			elseif t % NS.HEARTBEAT == 0 then
-				-- Idle and in-dungeon members only send heartbeats.
+			elseif t % NS.HEARTBEAT == 0 or t == DEATH_AT or t == REVIVE_AT then
+				-- Idle, in-dungeon and dead members only send heartbeats, plus
+				-- the moment something happens to them.
 				Send(fake)
 			end
 		end

@@ -2,9 +2,11 @@
 --
 -- A map canvas data provider (Blizzard's own mechanism for everything drawn
 -- on the world map) that puts one pin per roster entry on whatever map is
--- being looked at, and a pin mixin that shows the race icon and a tooltip.
--- The pin template lives in MauGuildMap.xml; its mixin table is filled at
--- PLAYER_LOGIN so the Blizzard base mixins are guaranteed to exist.
+-- being looked at, and a pin mixin that shows the race icon, a class ring,
+-- an optional name label, a skull when dead, and a tooltip with whatever the
+-- member shares.  The pin template lives in MauGuildMap.xml; its mixin table
+-- is filled at PLAYER_LOGIN so the Blizzard base mixins are guaranteed to
+-- exist.
 
 local _, NS = ...
 
@@ -16,6 +18,10 @@ local FALLBACK_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 -- Fraction of the race icon cropped away in total (half on each side), so the
 -- rim of Blizzard's round icon stays outside the visible square.
 local ICON_ZOOM = 0.30
+
+-- Globals referenced by the XML template (filled in TryInit).
+MauGuildMapPinMixin = {}
+MauGuildMapDataProviderMixin = {}
 
 -- Show an atlas zoomed in: take the atlas region from the client and shrink
 -- the texture coordinates towards its centre.  Falls back to the plain atlas
@@ -33,10 +39,6 @@ local function SetZoomedAtlas(texture, atlas)
 	texture:SetTexture(file)
 	texture:SetTexCoord(left + insetX, right - insetX, top + insetY, bottom - insetY)
 end
-
--- Globals referenced by the XML template (filled in TryInit).
-MauGuildMapPinMixin = {}
-MauGuildMapDataProviderMixin = {}
 
 -------------------------------------------------------------------------------
 -- Data provider
@@ -88,14 +90,20 @@ end
 local Pin = {}
 
 function Pin:OnLoad()
-	-- Constant on-screen size at every zoom level.
+	-- Constant on-screen size at every zoom level; the size itself is a
+	-- setting and applied in OnAcquired.
 	self:SetScalingLimits(1, 1.0, 1.0)
-	-- Below quest markers, flight points stay underneath (see CLAUDE.md 5).
+	-- Below quest markers, above flight points (see CLAUDE.md 5).
 	self:UseFrameLevelType("PIN_FRAME_LEVEL_AREA_POI")
 end
 
 function Pin:OnAcquired(entry)
 	self.entry = entry
+	local settings = NS.GetSettings()
+
+	local scale = settings.pinScale or 1
+	self:SetScalingLimits(1, scale, scale)
+
 	local atlas = NS.RaceAtlas(entry.race, entry.sex)
 	if atlas then
 		SetZoomedAtlas(self.Icon, atlas)
@@ -104,9 +112,32 @@ function Pin:OnAcquired(entry)
 		self.Icon:SetTexture(FALLBACK_ICON)
 		self.Icon:SetTexCoord(0, 1, 0, 1)
 	end
-	self.Icon:SetDesaturated(entry.inInstance)
-	self.Ring:SetVertexColor(NS.ClassColor(entry.class))
-	self:SetAlpha(entry.inInstance and 0.8 or 1)
+
+	local r, g, b = NS.ClassColor(entry.class)
+	self.Ring:SetVertexColor(r, g, b)
+	self.Ring:SetShown(settings.ring)
+
+	local dead = entry.dead and settings.deathMarkers
+	self.Skull:SetShown(dead)
+	self.Icon:SetDesaturated(entry.inInstance or dead)
+	self:SetAlpha((entry.inInstance and not dead) and 0.8 or 1)
+
+	if settings.labels then
+		self.Label:SetText(entry.name)
+		self.Label:SetTextColor(r, g, b)
+		self.Label:Show()
+	else
+		self.Label:Hide()
+	end
+
+	if self:GetMap() then
+		self:ApplyCurrentScale()
+	end
+end
+
+local function AddStatLine(tooltip, label, value, max, r, g, b)
+	local fraction = value / max
+	tooltip:AddLine(string.format("%s: %s / %s (%d%%)", label, NS.FormatNumber(value), NS.FormatNumber(max), fraction * 100 + 0.5), r, g, b)
 end
 
 function Pin:OnMouseEnter()
@@ -114,10 +145,27 @@ function Pin:OnMouseEnter()
 	if not e then
 		return
 	end
+	local settings = NS.GetSettings()
 	GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 	local r, g, b = NS.ClassColor(e.class)
 	GameTooltip:AddLine(e.name, r, g, b)
 	GameTooltip:AddLine(string.format("Level %d %s %s", e.level or 0, NS.RaceName(e.race), NS.ClassName(e.class, e.sex)), 1, 1, 1)
+
+	if e.dead then
+		GameTooltip:AddLine(e.inInstance and "Dead" or "Dead, the icon marks where", 1, 0.3, 0.3)
+	end
+	if settings.showHealth and e.hp and e.hpMax and e.hpMax > 0 then
+		AddStatLine(GameTooltip, "Health", e.hp, e.hpMax, NS.HealthColor(e.hp / e.hpMax))
+	end
+	if settings.showPower and e.power and e.powerMax and e.powerMax > 0 then
+		local name, pr, pg, pb = NS.PowerInfo(e.powerType)
+		AddStatLine(GameTooltip, name, e.power, e.powerMax, pr, pg, pb)
+	end
+	if settings.showXP and e.xp and e.xpMax and e.xpMax > 0 then
+		AddStatLine(GameTooltip, "Experience", e.xp, e.xpMax, 0.6, 0.4, 1)
+		GameTooltip:AddLine(string.format("%s to level %d", NS.FormatNumber(e.xpMax - e.xp), (e.level or 0) + 1), 0.6, 0.6, 0.6)
+	end
+
 	local zone = NS.MapName(e.mapID)
 	if e.inInstance then
 		GameTooltip:AddLine(string.format("In %s", e.instance ~= "" and e.instance or "an instance"), 1, 0.82, 0)
@@ -152,7 +200,7 @@ function Map:TryInit()
 	WorldMapFrame:AddDataProvider(self.provider)
 end
 
--- Roster changed: redraw soon if the map is open (coalesced).
+-- Roster or settings changed: redraw soon if the map is open (coalesced).
 function Map:RequestRefresh()
 	if not self.provider or self.refreshQueued or not WorldMapFrame or not WorldMapFrame:IsShown() or NS.IsBackground() then
 		return

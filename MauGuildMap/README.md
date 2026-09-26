@@ -6,24 +6,29 @@ Every member with the addon sends a tiny position message to the guild every few
 
 ## What you see
 
-* One round race icon per online guild member with the addon, on the zone map, the continent map and the world map.
-* Hover: class-coloured name, level, race, class, zone, and "updated N s ago". For members in an instance: the instance name and "shown at the entrance".
+* One round race icon per online guild member with the addon, with a thin ring in their class colour, on the zone map, the continent map and the world map. Optionally their name under it.
+* Hover: class-coloured name, level, race, class, health, mana/rage/energy, experience to the next level, zone, and "updated N s ago". For members in an instance: the instance name and "shown at the entrance".
+* Dead members get a skull, and their icon stays where they died until they are back up.
 * Icons move as members move (an update goes out every 2 seconds while moving, every 20 seconds when standing still).
 * An icon disappears when the member logs out, hides themselves, or stops sending for 60 seconds.
+
+Health, power and experience are only shown if the member shares them; each player decides that in their own options, and everything is shared by default.
 
 Nothing is drawn on the minimap.
 
 While the game is in the background (alt-tabbed) the addon goes quiet: it stops sampling your position, only sends a heartbeat now and then so you stay on your guild mates' maps, and holds incoming updates until the game is back.
 
-## Commands
+## Options
 
-* `/mgm` - status and this list of commands.
-* `/mgm hide` - stop sending your own position (others drop you at once). `/mgm show` resumes.
-* `/mgm disable` - stop showing other members on the map. `/mgm enable` shows them again.
-* `/mgm list` - the members, where they are and when they last updated.
+`/mgm` opens the addon's page in the game's options (Escape > Options > AddOns > MauGuildMap). Everything is there:
 
-Both switches are remembered between sessions.
-* `/mgm test` - simulate a guild of eight spread over the Eastern Kingdoms so you can see it work without a second player: two idle in cities, three inside dungeons (at the real entrances when the client knows them), three wandering through zones. After a minute one logs out and one goes silent and times out. Run it again to stop early.
+* Map: show guild members on the map, name labels under the icons, class-coloured ring, skull on dead members, icon size.
+* Tooltip: show health, show mana/rage/energy, show experience.
+* Privacy, what you send to the guild: send my position, share my health, share my mana/rage/energy, share my experience.
+
+All of it is on by default except the name labels. Turning off "send my position" removes you from everyone's map at once.
+
+There is also a hidden `/mgm test` for development: it simulates a guild of eight spread over the Eastern Kingdoms, two idle in cities, three inside dungeons at the real entrances, three wandering through zones with health, power and experience moving about, some sharing less than others, one dying and getting up again, one logging out, one timing out. Run it again to stop early.
 
 ## How it works
 
@@ -42,8 +47,9 @@ Enable *MauGuildMap* in the AddOns list at the character screen. Both you and th
 
 * `MauGuildMap.toc` - addon manifest.
 * `MauGuildMap.lua` - helpers, saved variables, events, `/mgm`.
+* `Options.lua` - the page in the game's Settings > AddOns panel.
 * `Roster.lua` - the members currently known, timeouts, guild presence, placement on any map.
-* `Comm.lua` - wire format, position sampling, sending, receiving.
+* `Comm.lua` - wire format, position and stats sampling, sending, receiving.
 * `MapPins.lua` + `MauGuildMap.xml` - the world map data provider, the pin and its tooltip.
 * `Test.lua` - `/mgm test`.
 * `CLAUDE.md` - full technical documentation.

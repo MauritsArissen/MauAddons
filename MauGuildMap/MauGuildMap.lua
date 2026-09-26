@@ -1,11 +1,13 @@
 -- MauGuildMap: guild members on the world map.
 --
--- Every guild member running this addon broadcasts a tiny position message
--- on the guild addon channel (Comm.lua).  Everyone else keeps those in a
--- roster (Roster.lua) and draws a race icon per member on Blizzard's world
--- map (MapPins.lua).  Members inside a dungeon are drawn at the spot where
--- they entered it.  /mgm test simulates a few members (Test.lua).
--- See CLAUDE.md for the full picture.
+-- Every guild member running this addon broadcasts a tiny status message
+-- on the guild addon channel (Comm.lua): position, level, and optionally
+-- health, power and experience.  Everyone else keeps those in a roster
+-- (Roster.lua) and draws a race icon per member on Blizzard's world map
+-- (MapPins.lua).  Members inside a dungeon are drawn at the spot where they
+-- entered it, dead members get a skull.  All switches live in the game's
+-- Settings > AddOns panel (Options.lua); /mgm opens it.  /mgm test
+-- simulates a guild (Test.lua).  See CLAUDE.md for the full picture.
 
 local ADDON_NAME, NS = ...
 _G.MauGuildMap = NS
@@ -19,6 +21,23 @@ NS.SEND_INTERVAL = 2
 NS.HEARTBEAT = 20
 -- Seconds without any message before a member is dropped from the map.
 NS.TIMEOUT = 60
+
+-- Every setting with its default.  "share*" is what I send, the rest is what
+-- I see.  Everything is on by default except the name labels.
+NS.DEFAULTS = {
+	broadcast = true,
+	shareHealth = true,
+	sharePower = true,
+	shareXP = true,
+	display = true,
+	labels = false,
+	ring = true,
+	deathMarkers = true,
+	pinScale = 1.0,
+	showHealth = true,
+	showPower = true,
+	showXP = true,
+}
 
 -------------------------------------------------------------------------------
 -- Background detection
@@ -133,6 +152,14 @@ function NS.FormatAge(seconds)
 	return string.format("%d min ago", math.floor(seconds / 60))
 end
 
+function NS.FormatNumber(n)
+	n = math.floor(tonumber(n) or 0)
+	if BreakUpLargeNumbers then
+		return BreakUpLargeNumbers(n)
+	end
+	return tostring(n)
+end
+
 function NS.MapName(mapID)
 	if mapID and mapID > 0 and C_Map and C_Map.GetMapInfo then
 		local info = C_Map.GetMapInfo(mapID)
@@ -143,6 +170,68 @@ function NS.MapName(mapID)
 	return nil
 end
 
+function NS.MaxLevel()
+	if GetMaxLevelForPlayerExpansion then
+		local level = GetMaxLevelForPlayerExpansion()
+		if level and level > 0 then
+			return level
+		end
+	end
+	if GetMaxPlayerLevel then
+		return GetMaxPlayerLevel() or 60
+	end
+	return 60
+end
+
+-- A plain integer, or nil when the value is missing or protected.  On this
+-- client unit health and power can come back as "secret" values in combat;
+-- those cannot be read, formatted or sent, so they are treated as unknown.
+function NS.SafeNumber(value)
+	if value == nil then
+		return nil
+	end
+	if issecretvalue and issecretvalue(value) then
+		return nil
+	end
+	if type(value) ~= "number" then
+		return nil
+	end
+	local ok, result = pcall(math.floor, value)
+	if ok then
+		return result
+	end
+	return nil
+end
+
+local POWER_NAMES = {
+	[0] = { "Mana", "MANA" },
+	[1] = { "Rage", "RAGE" },
+	[2] = { "Focus", "FOCUS" },
+	[3] = { "Energy", "ENERGY" },
+	[6] = { "Runic Power", "RUNIC_POWER" },
+}
+
+-- Display name and colour of a power type number (Enum.PowerType).
+function NS.PowerInfo(powerType)
+	local info = POWER_NAMES[powerType or -1]
+	local name = info and info[1] or "Power"
+	local color = info and PowerBarColor and PowerBarColor[info[2]]
+	if color then
+		return name, color.r or 1, color.g or 1, color.b or 1
+	end
+	return name, 1, 1, 1
+end
+
+-- Green above half, yellow above a quarter, red below.
+function NS.HealthColor(fraction)
+	if fraction >= 0.5 then
+		return 0.2, 1, 0.2
+	elseif fraction >= 0.25 then
+		return 1, 0.85, 0.2
+	end
+	return 1, 0.3, 0.3
+end
+
 -------------------------------------------------------------------------------
 -- Saved variables
 -------------------------------------------------------------------------------
@@ -151,15 +240,18 @@ function NS.InitDB()
 	MauGuildMapDB = MauGuildMapDB or {}
 	MauGuildMapDB.settings = MauGuildMapDB.settings or {}
 	local s = MauGuildMapDB.settings
-	-- broadcast: send my own position to the guild.  display: draw the others.
-	if s.broadcast == nil then
-		s.broadcast = true
+	for key, default in pairs(NS.DEFAULTS) do
+		if s[key] == nil then
+			s[key] = default
+		end
 	end
-	if s.display == nil then
-		s.display = true
+	if type(s.pinScale) ~= "number" or s.pinScale < 0.5 or s.pinScale > 2 then
+		s.pinScale = NS.DEFAULTS.pinScale
 	end
 end
 
+-- The settings table is handed to the Settings panel by reference, so it
+-- must be created once and never replaced.
 function NS.GetSettings()
 	if not MauGuildMapDB or not MauGuildMapDB.settings then
 		NS.InitDB()
@@ -181,57 +273,30 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
 			NS.InitDB()
 		end
 	elseif event == "PLAYER_LOGIN" then
+		NS.InitDB()
 		NS.Roster:Start()
 		NS.Comm:Start()
 		NS.Map:TryInit()
+		NS.Options:Register()
 	elseif event == "PLAYER_LOGOUT" then
 		NS.Comm:SendBye()
 	end
 end)
 
 -------------------------------------------------------------------------------
--- Slash command
+-- Slash command: /mgm opens the options.  "test" and "list" exist for
+-- development and are deliberately not announced anywhere.
 -------------------------------------------------------------------------------
 
 SLASH_MAUGUILDMAP1 = "/mgm"
 SLASH_MAUGUILDMAP2 = "/mauguildmap"
 SlashCmdList.MAUGUILDMAP = function(msg)
 	msg = (msg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
-	local settings = NS.GetSettings()
 	if msg == "test" then
 		NS.Test:Toggle()
-	elseif msg == "hide" then
-		settings.broadcast = false
-		NS.Comm:SendBye()
-		NS.Print("Broadcasting off: guild members no longer see you. /mgm show turns it back on.")
-	elseif msg == "show" then
-		settings.broadcast = true
-		NS.Comm:ForceSend()
-		NS.Print("Broadcasting on.")
-	elseif msg == "disable" then
-		settings.display = false
-		NS.Map:RequestRefresh()
-		NS.Print("Display off: other members are no longer drawn on the map. /mgm enable turns it back on.")
-	elseif msg == "enable" then
-		settings.display = true
-		NS.Map:RequestRefresh()
-		NS.Print("Display on.")
 	elseif msg == "list" then
 		NS.Roster:PrintList()
 	else
-		NS.Print("%d guild member(s) known%s. Sending my position: %s. Showing others: %s.",
-			NS.Roster:Count(),
-			IsInGuild() and "" or " (you are not in a guild)",
-			settings.broadcast and "|cff33ff33on|r" or "|cffff3333off|r",
-			settings.display and "|cff33ff33on|r" or "|cffff3333off|r")
-		local function Line(command, text)
-			print(string.format("  |cffffd100%s|r - %s", command, text))
-		end
-		Line("/mgm hide", "stop sending your position to the guild")
-		Line("/mgm show", "send your position again")
-		Line("/mgm disable", "stop showing other members on the map")
-		Line("/mgm enable", "show other members again")
-		Line("/mgm list", "who is known, where they are and when they last updated")
-		Line("/mgm test", "simulate three members for about two minutes (run again to stop)")
+		NS.Options:Open()
 	end
 end
