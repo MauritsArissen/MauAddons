@@ -23,7 +23,7 @@ While the game is in the background (alt-tabbed) the addon goes quiet: it stops 
 `/mgm` opens the addon's page in the game's options (Escape > Options > AddOns > MauGuildMap). Everything is there:
 
 * Map: show guild members on the map, name labels under the icons, class-coloured ring, skull on dead members, icon size.
-* Tooltip: show health, show mana/rage/energy, show experience, detailed tooltip (numbers instead of percentages, plus zone details and the age of the update).
+* Tooltip: show health, show mana/rage/energy, show experience.
 * Privacy, what you send to the guild: send my position, share my health, share my mana/rage/energy, share my experience.
 
 All of it is on by default except the name labels. Turning off "send my position" removes you from everyone's map at once.

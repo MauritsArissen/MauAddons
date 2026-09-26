@@ -37,7 +37,6 @@ NS.DEFAULTS = {
 	showHealth = true,
 	showPower = true,
 	showXP = true,
-	detailedTooltip = false,
 }
 
 -------------------------------------------------------------------------------

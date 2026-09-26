@@ -136,33 +136,15 @@ function Pin:OnAcquired(entry)
 end
 
 local XP_COLOR = { 0.6, 0.4, 1 }
--- Only mention the age of an update once it is getting old.
-local STALE_AFTER = 30
 
 local function HasStat(value, max)
 	return value ~= nil and max ~= nil and max > 0
 end
 
-local function AddStatLine(tooltip, label, value, max, r, g, b)
-	local fraction = value / max
-	tooltip:AddLine(string.format("%s: %s / %s (%d%%)", label, NS.FormatNumber(value), NS.FormatNumber(max), fraction * 100 + 0.5), r, g, b)
-end
-
--- Three lines: "Name            23", "Race Class     Zone", "HP 62%  Mana 40%  XP 31%".
-local function FillCompactTooltip(tooltip, e, settings)
-	local r, g, b = NS.ClassColor(e.class)
-	tooltip:AddDoubleLine(e.name .. (e.test and " (test)" or ""), tostring(e.level or 0), r, g, b, 1, 0.82, 0)
-
-	local where = NS.MapName(e.mapID)
-	if e.inInstance then
-		where = (e.instance ~= "" and e.instance or "Instance") .. " (entrance)"
-	end
-	tooltip:AddDoubleLine(NS.RaceName(e.race) .. " " .. NS.ClassName(e.class, e.sex), where or "", 1, 1, 1, 1, 0.82, 0)
-
+-- "HP 62%   Mana 40%   XP 31%" for whatever the member shares and the viewer
+-- wants to see; nil when there is nothing to show.
+local function StatsLine(e, settings)
 	local parts = {}
-	if e.dead then
-		parts[#parts + 1] = NS.Colorize("Dead", 1, 0.3, 0.3)
-	end
 	if settings.showHealth and HasStat(e.hp, e.hpMax) then
 		local fraction = e.hp / e.hpMax
 		parts[#parts + 1] = NS.Colorize(string.format("HP %d%%", fraction * 100 + 0.5), NS.HealthColor(fraction))
@@ -175,44 +157,9 @@ local function FillCompactTooltip(tooltip, e, settings)
 		parts[#parts + 1] = NS.Colorize(string.format("XP %d%%", e.xp / e.xpMax * 100 + 0.5), XP_COLOR[1], XP_COLOR[2], XP_COLOR[3])
 	end
 	if #parts > 0 then
-		tooltip:AddLine(table.concat(parts, "   "))
+		return table.concat(parts, "   ")
 	end
-
-	local age = GetTime() - (e.seen or 0)
-	if age > STALE_AFTER then
-		tooltip:AddLine("No update for " .. NS.FormatAge(age):gsub(" ago$", ""), 0.6, 0.6, 0.6)
-	end
-end
-
--- The full version: numbers, zone details, age of the update.
-local function FillDetailedTooltip(tooltip, e, settings)
-	local r, g, b = NS.ClassColor(e.class)
-	tooltip:AddLine(e.name, r, g, b)
-	tooltip:AddLine(string.format("Level %d %s %s", e.level or 0, NS.RaceName(e.race), NS.ClassName(e.class, e.sex)), 1, 1, 1)
-
-	if e.dead then
-		tooltip:AddLine(e.inInstance and "Dead" or "Dead, the icon marks where", 1, 0.3, 0.3)
-	end
-	if settings.showHealth and HasStat(e.hp, e.hpMax) then
-		AddStatLine(tooltip, "Health", e.hp, e.hpMax, NS.HealthColor(e.hp / e.hpMax))
-	end
-	if settings.showPower and HasStat(e.power, e.powerMax) then
-		local name, pr, pg, pb = NS.PowerInfo(e.powerType)
-		AddStatLine(tooltip, name, e.power, e.powerMax, pr, pg, pb)
-	end
-	if settings.showXP and HasStat(e.xp, e.xpMax) then
-		AddStatLine(tooltip, "Experience", e.xp, e.xpMax, XP_COLOR[1], XP_COLOR[2], XP_COLOR[3])
-		tooltip:AddLine(string.format("%s to level %d", NS.FormatNumber(e.xpMax - e.xp), (e.level or 0) + 1), 0.6, 0.6, 0.6)
-	end
-
-	local zone = NS.MapName(e.mapID)
-	if e.inInstance then
-		tooltip:AddLine(string.format("In %s", e.instance ~= "" and e.instance or "an instance"), 1, 0.82, 0)
-		tooltip:AddLine("Shown at the entrance" .. (zone and (" in " .. zone) or ""), 0.6, 0.6, 0.6)
-	elseif zone then
-		tooltip:AddLine(zone, 1, 0.82, 0)
-	end
-	tooltip:AddLine("Updated " .. NS.FormatAge(GetTime() - (e.seen or 0)) .. (e.test and " (test member)" or ""), 0.6, 0.6, 0.6)
+	return nil
 end
 
 function Pin:OnMouseEnter()
@@ -222,11 +169,24 @@ function Pin:OnMouseEnter()
 	end
 	local settings = NS.GetSettings()
 	GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-	if settings.detailedTooltip then
-		FillDetailedTooltip(GameTooltip, e, settings)
-	else
-		FillCompactTooltip(GameTooltip, e, settings)
+	local r, g, b = NS.ClassColor(e.class)
+	GameTooltip:AddLine(e.name, r, g, b)
+	GameTooltip:AddLine(string.format("Level %d %s %s", e.level or 0, NS.RaceName(e.race), NS.ClassName(e.class, e.sex)), 1, 1, 1)
+	if e.dead then
+		GameTooltip:AddLine(e.inInstance and "Dead" or "Dead, the icon marks where", 1, 0.3, 0.3)
 	end
+	local stats = StatsLine(e, settings)
+	if stats then
+		GameTooltip:AddLine(stats)
+	end
+	local zone = NS.MapName(e.mapID)
+	if e.inInstance then
+		GameTooltip:AddLine(string.format("In %s", e.instance ~= "" and e.instance or "an instance"), 1, 0.82, 0)
+		GameTooltip:AddLine("Shown at the entrance" .. (zone and (" in " .. zone) or ""), 0.6, 0.6, 0.6)
+	elseif zone then
+		GameTooltip:AddLine(zone, 1, 0.82, 0)
+	end
+	GameTooltip:AddLine("Updated " .. NS.FormatAge(GetTime() - (e.seen or 0)) .. (e.test and " (test member)" or ""), 0.6, 0.6, 0.6)
 	GameTooltip:Show()
 end
 
