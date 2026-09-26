@@ -15,29 +15,60 @@ NS.Map = Map
 
 local TEMPLATE = "MauGuildMapPinTemplate"
 local FALLBACK_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
--- Fraction of the race icon cropped away in total (half on each side), so the
--- rim of Blizzard's round icon stays outside the visible square.
-local ICON_ZOOM = 0.30
 
 -- Globals referenced by the XML template (filled in TryInit).
 MauGuildMapPinMixin = {}
 MauGuildMapDataProviderMixin = {}
 
 -- Show an atlas zoomed in: take the atlas region from the client and shrink
--- the texture coordinates towards its centre.  Falls back to the plain atlas
--- when the region cannot be read.
-local function SetZoomedAtlas(texture, atlas)
+-- the texture coordinates towards its centre by "zoom" (0-1 of the region,
+-- half on each side) so the rim of Blizzard's round icon stays outside the
+-- visible square.  Falls back to the plain atlas when the region cannot be
+-- read.
+local function SetZoomedAtlas(texture, atlas, zoom)
 	local info = C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(atlas)
 	local file = info and (info.file or info.filename)
-	if not file or not info.leftTexCoord then
+	if not file or not info.leftTexCoord or zoom <= 0 then
 		texture:SetAtlas(atlas)
 		return
 	end
 	local left, right, top, bottom = info.leftTexCoord, info.rightTexCoord, info.topTexCoord, info.bottomTexCoord
-	local insetX = (right - left) * ICON_ZOOM / 2
-	local insetY = (bottom - top) * ICON_ZOOM / 2
+	local insetX = (right - left) * zoom / 2
+	local insetY = (bottom - top) * zoom / 2
 	texture:SetTexture(file)
 	texture:SetTexCoord(left + insetX, right - insetX, top + insetY, bottom - insetY)
+end
+
+-- Font, size, outline, position and colour of the name label, all settings.
+local function ApplyLabel(pin, entry, settings, r, g, b)
+	local label = pin.Label
+	if not settings.labels then
+		label:Hide()
+		return
+	end
+	local flags = NS.OutlineFlags(settings.labelOutline)
+	local size = settings.labelSize
+	if not label:SetFont(NS.FontPath(settings.labelFont), size, flags) then
+		label:SetFont(NS.FontPath("friz"), size, flags)
+	end
+	if flags == "" then
+		label:SetShadowOffset(1, -1)
+	else
+		label:SetShadowOffset(0, 0)
+	end
+	label:ClearAllPoints()
+	if settings.labelPosition == "above" then
+		label:SetPoint("BOTTOM", pin, "TOP", 0, settings.labelOffset)
+	else
+		label:SetPoint("TOP", pin, "BOTTOM", 0, -settings.labelOffset)
+	end
+	label:SetText(entry.name)
+	if settings.labelClassColor then
+		label:SetTextColor(r, g, b)
+	else
+		label:SetTextColor(1, 1, 1)
+	end
+	label:Show()
 end
 
 -------------------------------------------------------------------------------
@@ -90,23 +121,30 @@ end
 local Pin = {}
 
 function Pin:OnLoad()
-	-- Constant on-screen size at every zoom level; the size itself is a
-	-- setting and applied in OnAcquired.
+	-- Constant on-screen size at every zoom level; the pixel sizes are
+	-- settings and applied in OnAcquired.
 	self:SetScalingLimits(1, 1.0, 1.0)
 	-- Below quest markers, above flight points (see CLAUDE.md 5).
 	self:UseFrameLevelType("PIN_FRAME_LEVEL_AREA_POI")
 end
 
+-- Everything visual comes from the settings, applied on every acquire so a
+-- change in the options shows on the next refresh.
 function Pin:OnAcquired(entry)
 	self.entry = entry
 	local settings = NS.GetSettings()
 
-	local scale = settings.pinScale or 1
-	self:SetScalingLimits(1, scale, scale)
+	local iconSize = settings.iconSize
+	local ringWidth = settings.ring and settings.ringWidth or 0
+	local outerSize = iconSize + 2 * ringWidth
+	self:SetSize(outerSize, outerSize)
+	self.Icon:SetSize(iconSize, iconSize)
+	self.Ring:SetSize(outerSize, outerSize)
+	self.Skull:SetSize(math.max(10, iconSize - 2), math.max(10, iconSize - 2))
 
 	local atlas = NS.RaceAtlas(entry.race, entry.sex)
 	if atlas then
-		SetZoomedAtlas(self.Icon, atlas)
+		SetZoomedAtlas(self.Icon, atlas, settings.iconZoom / 100)
 	else
 		-- Pins are pooled; undo any crop left by a previous member.
 		self.Icon:SetTexture(FALLBACK_ICON)
@@ -115,20 +153,14 @@ function Pin:OnAcquired(entry)
 
 	local r, g, b = NS.ClassColor(entry.class)
 	self.Ring:SetVertexColor(r, g, b)
-	self.Ring:SetShown(settings.ring)
+	self.Ring:SetShown(ringWidth > 0)
 
 	local dead = entry.dead and settings.deathMarkers
 	self.Skull:SetShown(dead)
 	self.Icon:SetDesaturated(entry.inInstance or dead)
-	self:SetAlpha((entry.inInstance and not dead) and 0.8 or 1)
+	self:SetAlpha((entry.inInstance and not dead) and (settings.instanceAlpha / 100) or 1)
 
-	if settings.labels then
-		self.Label:SetText(entry.name)
-		self.Label:SetTextColor(r, g, b)
-		self.Label:Show()
-	else
-		self.Label:Hide()
-	end
+	ApplyLabel(self, entry, settings, r, g, b)
 
 	if self:GetMap() then
 		self:ApplyCurrentScale()

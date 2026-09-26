@@ -22,7 +22,9 @@ While the game is in the background (alt-tabbed) the addon goes quiet: it stops 
 
 `/mgm` opens the addon's page in the game's options (Escape > Options > AddOns > MauGuildMap). Everything is there:
 
-* Map: show guild members on the map, name labels under the icons, class-coloured ring, skull on dead members, icon size.
+* Map: show guild members on the map, skull on dead members, icon size in pixels, icon zoom, opacity for members inside an instance.
+* Class ring: on or off, and its width in pixels.
+* Name labels: on or off, font, text size, outline, above or below the icon, distance from the icon, class colour or white.
 * Tooltip: show health, show mana/rage/energy, show experience.
 * Privacy, what you send to the guild: send my position, share my health, share my mana/rage/energy, share my experience.
 

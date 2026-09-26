@@ -30,14 +30,69 @@ NS.DEFAULTS = {
 	sharePower = true,
 	shareXP = true,
 	display = true,
-	labels = false,
-	ring = true,
 	deathMarkers = true,
-	pinScale = 1.0,
+	iconSize = 20,        -- pixels
+	iconZoom = 30,        -- percent of the race icon cropped away (hides its rim)
+	instanceAlpha = 80,   -- percent opacity for members inside an instance
+	ring = true,
+	ringWidth = 1,        -- pixels
+	labels = false,
+	labelFont = "friz",
+	labelSize = 10,
+	labelOutline = "none",
+	labelPosition = "below",
+	labelOffset = 1,      -- pixels between icon and label
+	labelClassColor = true,
 	showHealth = true,
 	showPower = true,
 	showXP = true,
 }
+
+-- Allowed ranges for the numeric settings (also the slider ranges).
+NS.RANGES = {
+	iconSize = { 12, 40, 1 },
+	iconZoom = { 0, 50, 5 },
+	instanceAlpha = { 20, 100, 5 },
+	ringWidth = { 1, 4, 1 },
+	labelSize = { 6, 20, 1 },
+	labelOffset = { 0, 12, 1 },
+}
+
+-- Fonts that ship with every client, by key: label, path.
+NS.FONTS = {
+	{ "friz", "Friz Quadrata (game default)", STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF" },
+	{ "arial", "Arial Narrow", "Fonts\\ARIALN.TTF" },
+	{ "skurri", "Skurri", "Fonts\\skurri.ttf" },
+	{ "morpheus", "Morpheus", "Fonts\\MORPHEUS.ttf" },
+}
+
+NS.OUTLINES = {
+	{ "none", "None (shadow)", "" },
+	{ "outline", "Outline", "OUTLINE" },
+	{ "thick", "Thick outline", "THICKOUTLINE" },
+}
+
+NS.LABEL_POSITIONS = {
+	{ "below", "Below the icon" },
+	{ "above", "Above the icon" },
+}
+
+local function Lookup(list, key, column)
+	for _, row in ipairs(list) do
+		if row[1] == key then
+			return row[column]
+		end
+	end
+	return list[1][column]
+end
+
+function NS.FontPath(key)
+	return Lookup(NS.FONTS, key, 3)
+end
+
+function NS.OutlineFlags(key)
+	return Lookup(NS.OUTLINES, key, 3)
+end
 
 -------------------------------------------------------------------------------
 -- Background detection
@@ -245,13 +300,15 @@ function NS.InitDB()
 	MauGuildMapDB.settings = MauGuildMapDB.settings or {}
 	local s = MauGuildMapDB.settings
 	for key, default in pairs(NS.DEFAULTS) do
-		if s[key] == nil then
+		if s[key] == nil or type(s[key]) ~= type(default) then
 			s[key] = default
 		end
 	end
-	if type(s.pinScale) ~= "number" or s.pinScale < 0.5 or s.pinScale > 2 then
-		s.pinScale = NS.DEFAULTS.pinScale
+	for key, range in pairs(NS.RANGES) do
+		s[key] = math.max(range[1], math.min(range[2], s[key]))
 	end
+	-- 0.2.x stored the icon size as a scale factor.
+	s.pinScale = nil
 end
 
 -- The settings table is handed to the Settings panel by reference, so it

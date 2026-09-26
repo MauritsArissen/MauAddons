@@ -16,6 +16,18 @@ local function Header(layout, text)
 	end
 end
 
+local function Percent(value)
+	return string.format("%d%%", value + 0.5)
+end
+
+local function Pixels(value)
+	return string.format("%d px", value + 0.5)
+end
+
+local function Points(value)
+	return string.format("%d", value + 0.5)
+end
+
 function Options:Register()
 	if self.category then
 		return
@@ -27,33 +39,66 @@ function Options:Register()
 	local category, layout = Settings.RegisterVerticalLayoutCategory("MauGuildMap")
 	self.category = category
 
-	local function Checkbox(key, name, tooltip)
-		local setting = Settings.RegisterAddOnSetting(category, "MauGuildMap_" .. key, key, settings, Settings.VarType.Boolean, name, NS.DEFAULTS[key])
+	local function Register(key, varType, name)
+		local setting = Settings.RegisterAddOnSetting(category, "MauGuildMap_" .. key, key, settings, varType, name, NS.DEFAULTS[key])
 		setting:SetValueChangedCallback(function()
 			Options:OnChanged(key)
 		end)
-		Settings.CreateCheckbox(category, setting, tooltip)
+		return setting
+	end
+
+	local function Checkbox(key, name, tooltip)
+		Settings.CreateCheckbox(category, Register(key, Settings.VarType.Boolean, name), tooltip)
+	end
+
+	local function Slider(key, name, tooltip, formatter)
+		if not Settings.CreateSlider or not Settings.CreateSliderOptions then
+			return
+		end
+		local range = NS.RANGES[key]
+		local setting = Register(key, Settings.VarType.Number, name)
+		local sliderOptions = Settings.CreateSliderOptions(range[1], range[2], range[3])
+		if MinimalSliderWithSteppersMixin and MinimalSliderWithSteppersMixin.Label then
+			sliderOptions:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, formatter)
+		end
+		Settings.CreateSlider(category, setting, sliderOptions, tooltip)
+	end
+
+	-- entries: list of { value, label, ... }
+	local function Dropdown(key, name, tooltip, entries)
+		if not Settings.CreateDropdown or not Settings.CreateControlTextContainer then
+			return
+		end
+		local setting = Register(key, Settings.VarType.String, name)
+		local function GetOptions()
+			local container = Settings.CreateControlTextContainer()
+			for _, entry in ipairs(entries) do
+				container:Add(entry[1], entry[2])
+			end
+			return container:GetData()
+		end
+		Settings.CreateDropdown(category, setting, GetOptions, tooltip)
 	end
 
 	Header(layout, "Map")
 	Checkbox("display", "Show guild members on the map", "Draw the guild members who run MauGuildMap on the world map. Turning this off keeps listening, so turning it back on shows everyone at once.")
-	Checkbox("labels", "Name labels under the icons", "Write each member's name under their icon, in their class colour.")
-	Checkbox("ring", "Class-coloured ring around the icons", "A thin ring in the member's class colour around the race icon.")
 	Checkbox("deathMarkers", "Skull on dead members", "Show a skull on members who are dead. Their icon stays where they died until they are back on their feet.")
+	Slider("iconSize", "Icon size", "Size of the race icon in pixels.", Pixels)
+	Slider("iconZoom", "Icon zoom", "How much of the race icon's rim is cropped away. 0% shows Blizzard's icon as it is.", Percent)
+	Slider("instanceAlpha", "Opacity inside instances", "How solid the icon of a member inside a dungeon, raid or battleground is drawn.", Percent)
 
-	if Settings.CreateSlider and Settings.CreateSliderOptions then
-		local setting = Settings.RegisterAddOnSetting(category, "MauGuildMap_pinScale", "pinScale", settings, Settings.VarType.Number, "Icon size", NS.DEFAULTS.pinScale)
-		setting:SetValueChangedCallback(function()
-			Options:OnChanged("pinScale")
-		end)
-		local sliderOptions = Settings.CreateSliderOptions(0.6, 1.6, 0.1)
-		if MinimalSliderWithSteppersMixin and MinimalSliderWithSteppersMixin.Label then
-			sliderOptions:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(value)
-				return string.format("%d%%", value * 100 + 0.5)
-			end)
-		end
-		Settings.CreateSlider(category, setting, sliderOptions, "Size of the icons on the map.")
-	end
+	Header(layout, "Class ring")
+	Checkbox("ring", "Ring around the icons", "A ring in the member's class colour around the race icon.")
+	Slider("ringWidth", "Ring width", "Thickness of the class-coloured ring in pixels.", Pixels)
+
+	Header(layout, "Name labels")
+	Checkbox("labels", "Name under the icons", "Write each member's name next to their icon.")
+	Dropdown("labelFont", "Font", "Typeface of the name.", NS.FONTS)
+	Slider("labelSize", "Text size", "Size of the name in points.", Points)
+	Dropdown("labelOutline", "Outline", "Outline around the letters. None uses a drop shadow instead.", NS.OUTLINES)
+	Dropdown("labelPosition", "Position", "Where the name goes relative to the icon.", NS.LABEL_POSITIONS)
+	Slider("labelOffset", "Distance from the icon", "Gap between the icon and the name in pixels.", Pixels)
+	Checkbox("labelClassColor", "Class colour", "Colour the name by the member's class. Off writes it in white.")
 
 	Header(layout, "Tooltip")
 	Checkbox("showHealth", "Show health", "Show a member's health in the tooltip, if they share it.")
