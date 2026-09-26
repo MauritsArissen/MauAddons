@@ -69,6 +69,10 @@ function Roster:Update(name, data)
 		entry = { name = name }
 		self.members[name] = entry
 		self.count = self.count + 1
+		-- A real member we did not know yet: make sure they see us too.
+		if not data.test and NS.Comm and NS.Comm.AnnounceSoon then
+			NS.Comm:AnnounceSoon()
+		end
 	end
 	local moved = entry.mapID ~= data.mapID or entry.x ~= data.x or entry.y ~= data.y
 	entry.mapID = data.mapID or 0
@@ -104,6 +108,16 @@ function Roster:Remove(name, reason)
 	end
 	self:Changed()
 	return true
+end
+
+-- Left the guild: nobody on the map any more.
+function Roster:Clear()
+	if self.count == 0 then
+		return
+	end
+	self.members = {}
+	self.count = 0
+	self:Changed()
 end
 
 function Roster:RemoveTestEntries()

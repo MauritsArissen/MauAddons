@@ -253,10 +253,46 @@ function Comm:Start()
 	self:RegisterEvent("PLAYER_DEAD")
 	self:RegisterEvent("PLAYER_ALIVE")
 	self:RegisterEvent("PLAYER_UNGHOST")
+	self:RegisterEvent("PLAYER_GUILD_UPDATE")
+	self:RegisterEvent("GUILD_ROSTER_UPDATE")
+	self.inGuild = IsInGuild() and true or false
 	self.ticker = C_Timer.NewTicker(NS.SEND_INTERVAL, function()
 		self:Tick()
 	end)
 	self:Tick()
+end
+
+-- Joined or left a guild: start announcing at once, or forget the old
+-- guild's members.  Checked on the guild events and on every tick, so it
+-- works whatever the event payload looks like on this client.
+function Comm:CheckGuild()
+	local inGuild = IsInGuild() and true or false
+	if inGuild == self.inGuild then
+		return
+	end
+	self.inGuild = inGuild
+	self.lastSent = nil
+	if inGuild then
+		self.lastSendTime = 0
+		self:Tick()
+	else
+		NS.Roster:Clear()
+	end
+end
+
+-- Someone new showed up (a member who just joined the guild, logged in or
+-- installed the addon): answer soon with our own state so they see us right
+-- away instead of after our next heartbeat.  A little jitter keeps a whole
+-- guild from answering in the same instant.
+function Comm:AnnounceSoon()
+	if self.announceQueued then
+		return
+	end
+	self.announceQueued = true
+	C_Timer.After(0.5 + math.random() * 1.5, function()
+		self.announceQueued = false
+		self:ForceSend()
+	end)
 end
 
 local function Fraction(value, max)
@@ -276,7 +312,8 @@ local function Changed(a, b)
 end
 
 function Comm:Tick()
-	if not NS.GetSettings().broadcast or not IsInGuild() then
+	self:CheckGuild()
+	if not NS.GetSettings().broadcast or not self.inGuild then
 		return
 	end
 	local now = GetTime()
@@ -378,6 +415,8 @@ Comm:SetScript("OnEvent", function(self, event, prefix, text, channel, sender)
 		if prefix == NS.PREFIX and channel == "GUILD" then
 			self:OnMessage(text, sender)
 		end
+	elseif event == "PLAYER_GUILD_UPDATE" or event == "GUILD_ROSTER_UPDATE" then
+		self:CheckGuild()
 	else
 		-- Loading screens, level-ups, deaths and resurrections: tell everyone
 		-- at the next tick rather than waiting for the heartbeat.
