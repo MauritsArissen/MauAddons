@@ -18,7 +18,15 @@ Icons disappear when a member logs out, hides themselves, or hasn't sent anythin
 
 **Options**
 
-Type `/mgm` or go to Escape > Options > AddOns > MauGuildMap. You can set the icon size, how much of the icon is cropped, how faded members inside instances are, the class ring and its width, name labels with their font, size, outline, position, distance and colour, the skull on dead members, what the tooltip shows, and what you share with the guild.
+There are no chat commands to remember. Type `/mgm` or go to Escape > Options > AddOns > MauGuildMap and everything is on one page:
+
+- Map: whether the guild is shown at all, the skull on dead members, the icon size in pixels, how much of the icon's rim is cropped, and how faded members inside instances are drawn.
+- Class ring: on or off, and how thick it is.
+- Name labels: on or off, font, text size, outline, above or below the icon, distance from the icon, and class colour or white.
+- Tooltip: whether health, mana/rage/energy and experience are shown.
+- Privacy: whether you send your position at all, and whether your health, your power and your experience go with it.
+
+Changes show on the map right away, so you can tweak things with the map open.
 
 Made for World of Warcraft: Forever (the 1.60 client). It uses Blizzard's own map pin system, so it gets along with the regular map and with other map addons.
 
