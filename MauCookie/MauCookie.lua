@@ -4,11 +4,12 @@
 -- cookies every second (prices rise 15% per building), buy upgrades that
 -- double a building's output, click the golden cookie when it shows up for
 -- a frenzy or a lucky windfall, collect achievements (each one adds 1% to
--- production).  The bakery keeps running while the window is closed, and
--- time spent logged out is paid out at half rate for up to eight hours.
--- Data.lua holds the buildings, upgrades and achievements, Game.lua the
--- rules and the tick, UI.lua the window, Options.lua the settings page.
--- /mck toggles the window.  See CLAUDE.md.
+-- production), and ascend for heavenly chips once the numbers get big.
+-- The bakery keeps running while the window is closed, as long as you are
+-- logged in; nothing happens while you are logged out.  Data.lua holds the
+-- buildings, upgrades, heavenly upgrades and achievements, Game.lua the
+-- rules and the tick, Comm.lua the guild board, UI.lua the window,
+-- Options.lua the settings page.  /mck toggles the window.  See CLAUDE.md.
 
 local ADDON_NAME, NS = ...
 _G.MauCookie = NS
@@ -17,8 +18,9 @@ NS.ADDON_NAME = ADDON_NAME
 
 NS.DEFAULTS = {
 	sounds = true,
-	popups = true,      -- "+1" texts on the cookie
-	offline = true,     -- cookies for time logged out
+	popups = true,          -- "+1" texts on the cookie
+	shareScores = true,     -- guild board
+	customArt = false,      -- use the files in Textures\ (see README)
 	scale = 100,
 }
 
@@ -26,9 +28,9 @@ NS.RANGES = {
 	scale = { 60, 150, 5 },
 }
 
-NS.OFFLINE_RATE = 0.5
-NS.OFFLINE_CAP = 8 * 3600
 NS.PRICE_GROWTH = 1.15
+NS.PRESTIGE_BASE = 1e10     -- prestige level = cube root of (all cookies ever / this)
+NS.ART_ROOT = "Interface\\AddOns\\" .. ADDON_NAME .. "\\Textures\\"
 
 -------------------------------------------------------------------------------
 -- Helpers
@@ -116,16 +118,44 @@ function NS.FormatDuration(seconds)
 	return string.format("%d d %d h", math.floor(seconds / 86400), math.floor(seconds % 86400 / 3600))
 end
 
+-- "Name-Realm" -> "Name"
+function NS.ShortName(name)
+	if not name or name == "" then
+		return nil
+	end
+	return (name:match("^([^%-]+)"))
+end
+
+function NS.ClassColor(classFile)
+	local color
+	if classFile and C_ClassColor and C_ClassColor.GetClassColor then
+		color = C_ClassColor.GetClassColor(classFile)
+	end
+	if not color and classFile and RAID_CLASS_COLORS then
+		color = RAID_CLASS_COLORS[classFile]
+	end
+	if color then
+		return color.r, color.g, color.b
+	end
+	return 0.8, 0.8, 0.8
+end
+
+-- Path of a file in the addon's Textures folder (no extension: the client
+-- finds .tga, .blp or .png), used when the custom art option is on.
+function NS.Art(key)
+	return NS.ART_ROOT .. key
+end
+
 -------------------------------------------------------------------------------
 -- Saved variables
 -------------------------------------------------------------------------------
 
 function NS.NewSave()
-	local now = NS.Now()
 	return {
 		cookies = 0, baked = 0, clicks = 0, handmade = 0,
 		buildings = {}, upgrades = {}, achievements = {},
-		golden = 0, playTime = 0, started = now, lastSeen = now,
+		golden = 0, playTime = 0, started = NS.Now(),
+		prestige = 0, chips = 0, heavenly = {}, allTime = 0, ascensions = 0,
 	}
 end
 
@@ -148,6 +178,7 @@ function NS.InitDB()
 			s[key] = default
 		end
 	end
+	db.guild = db.guild or {}   -- guild name -> player name -> record (Comm.lua)
 end
 
 function NS.GetSettings()
@@ -164,7 +195,6 @@ end
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
-eventFrame:RegisterEvent("PLAYER_LOGOUT")
 eventFrame:SetScript("OnEvent", function(_, event, arg1)
 	if event == "ADDON_LOADED" then
 		if arg1 == ADDON_NAME then
@@ -173,9 +203,8 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
 	elseif event == "PLAYER_LOGIN" then
 		NS.InitDB()
 		NS.Game:Start()
+		NS.Comm:Start()
 		NS.Options:Register()
-	elseif event == "PLAYER_LOGOUT" then
-		NS.Game:Save()
 	end
 end)
 

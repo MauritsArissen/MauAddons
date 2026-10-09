@@ -11,7 +11,7 @@ A collection of World of Warcraft addons by Maurits Arissen. Each addon lives in
 | [MauLootbox](MauLootbox/) | Turns every loot window into a lootbox: a slot machine reel spins and lands on each item before it goes into your bags. | World of Warcraft: Forever (`_classic_beta_`, interface `16001`) |
 | [MauPlinko](MauPlinko/) | Plinko in game: drop balls down a peg board for made-up chips, with risk levels, 8 to 16 rows, auto drop, statistics and a guild leaderboard. | World of Warcraft: Forever (`_classic_beta_`, interface `16001`) |
 | [MauPeggle](MauPeggle/) | Peggle in game: aim and shoot a ball through a board of pegs with real bouncing physics, clear the orange pegs, catch free balls, trigger powers, ride the fever, through designed and endless levels. | World of Warcraft: Forever (`_classic_beta_`, interface `16001`) |
-| [MauCookie](MauCookie/) | Cookie Clicker in game: click the cookie, buy grandmas and farms through to prisms, upgrades, golden cookies, achievements, and the bakery keeps baking while you play. | World of Warcraft: Forever (`_classic_beta_`, interface `16001`) |
+| [MauCookie](MauCookie/) | Cookie Clicker in game: click the cookie, buy grandmas and farms through to prisms, upgrades, golden cookies, achievements, ascension with heavenly upgrades, a guild board, and the bakery keeps baking while you play. | World of Warcraft: Forever (`_classic_beta_`, interface `16001`) |
 
 Each addon folder has its own `README.md` with usage, slash commands and known limits, and a `CLAUDE.md` with the full technical documentation.
 

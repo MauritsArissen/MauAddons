@@ -4,43 +4,51 @@ Complete reference for the MauCookie addon. Read it before changing anything. Ta
 
 ## 1. What it is
 
-A Cookie Clicker homage built 2026-10-09 on the user's request ("make a new addon, cookie clicker"). Click the cookie, buy the original's first fourteen buildings at the original prices and rates, upgrades, golden cookies with Frenzy / Lucky / Click Frenzy, achievements worth +1% production each, offline cookies. `/mck` toggles the window. The save is account wide (`MauCookieDB.save`).
+A Cookie Clicker homage built 2026-10-09 on the user's request. Click the cookie, buy the original's first fourteen buildings at the original prices and rates, upgrades, golden cookies with Frenzy / Lucky / Click Frenzy, achievements worth +1% production each, ascension for heavenly chips with a small heavenly shop (0.2.0), a guild board with five leaderboards (0.2.0), optional user-supplied art (0.2.0). `/mck` toggles the window. The save is account wide (`MauCookieDB.save`). **No offline production**: the user explicitly does not want cookies for time logged out (0.1.0 had it, 0.2.0 removed it); the bakery runs only while logged in, window open or not.
 
 ## 2. Files
 
 | File | Role |
 |---|---|
-| `MauCookie.toc` | Load order: MauCookie.lua, Data.lua, Game.lua, UI.lua, Options.lua. |
-| `MauCookie.lua` | Namespace `NS` (`_G.MauCookie`), `NS.DEFAULTS` (`sounds`, `popups`, `offline`, `scale`), constants (`OFFLINE_RATE` 0.5, `OFFLINE_CAP` 8 h, `PRICE_GROWTH` 1.15), helpers (`Print`, `Guard`, `PlayKit`, `Clamp`, `Now`, `Commas`, `Beautify`, `BeautifyRate`, `FormatDuration`), `NewSave`, `InitDB`, events (`PLAYER_LOGIN` → `Game:Start`, `PLAYER_LOGOUT` → `Game:Save`), `/mck`, binding names, compartment function. |
-| `Data.lua` | `NS.BUILDINGS` (14, with `index`, `iconPath`), `NS.UPGRADES` (5 tiers × 14 buildings, 5 mice, 12 flavours, 2 luck) and `NS.UPGRADE_BY_ID`, `NS.ACHIEVEMENTS` (`{ id, name, desc, check(save, game) }`) and `NS.ACHIEVEMENT_BY_ID`. |
-| `Game.lua` | `NS.Game`: `Start` (ticker frame, offline), `Tick(dt)`, `Cps(withBuffs)`, `BuildingCps(b)`, `GlobalMult`, `ClickPower`, `Click`, `Price`/`PriceFor`/`Buy`, `IsRevealed`, `UpgradeUnlocked`/`AvailableUpgrades`/`BuyUpgrade`, golden cookies (`RollGolden`, `ClickGolden`), buffs (`AddBuff`, `BuffLeft`), `CheckAchievements`, `Offline`, `Wipe`, `Save`. |
-| `UI.lua` | `NS.UI`: window `MauCookieFrame`, left panel (counter, cookie button, buffs, banner, floats), store rows, upgrade grid, overlays `stats` and `achievements`, golden cookie button, `Refresh(force)` at 10 Hz from `OnUpdate`. |
+| `MauCookie.toc` | Load order: MauCookie.lua, Data.lua, Game.lua, Comm.lua, UI.lua, Options.lua. |
+| `MauCookie.lua` | Namespace `NS` (`_G.MauCookie`), `NS.DEFAULTS` (`sounds`, `popups`, `shareScores`, `customArt`, `scale`), constants (`PRICE_GROWTH` 1.15, `PRESTIGE_BASE` 1e10, `ART_ROOT`), helpers (`Print`, `Guard`, `PlayKit`, `Clamp`, `Now`, `Commas`, `Beautify`, `BeautifyRate`, `FormatDuration`, `ShortName`, `ClassColor`, `Art`), `NewSave`, `InitDB`, events (`PLAYER_LOGIN` → `Game:Start`, `Comm:Start`), `/mck`, binding names, compartment function. |
+| `Data.lua` | `NS.BUILDINGS` (14), `NS.UPGRADES` (5 tiers × 14, 5 mice, 12 flavours, 2 luck), `NS.HEAVENLY` (5), `NS.ACHIEVEMENTS` (46: baked, cps, handmade, buildings, grandmas/cursors, golden, upgrades, ascensions) with lookup tables. |
+| `Game.lua` | `NS.Game`: `Start` (ticker), `Tick(dt)`, `Cps`, `BuildingCps`, `GlobalMult`, `ClickPower`, `Click`, `Price`/`PriceFor`/`Buy`, `IsRevealed`, upgrades, `Changed` (version bump, UI refresh, Comm), ascension (`PrestigeFor`, `AscendPreview`, `CookiesToNextChip`, `Ascend`, `BuyHeavenly`), golden cookies, buffs, `CheckAchievements`, `Wipe`. |
+| `Comm.lua` | `NS.Comm`: the guild board (section 5), `NS.BOARDS`. |
+| `UI.lua` | `NS.UI`: window `MauCookieFrame`, left panel, store rows, upgrade grid, four buttons, overlays `stats`, `achievements`, `heaven`, `guild`, golden cookie, `ApplyArt`, `Refresh(force)` at 10 Hz. |
 | `Options.lua` | Settings > AddOns category. |
-| `Bindings.xml` | `MAUCOOKIE_TOGGLE`, `MAUCOOKIE_CLICK` (`MauCookie.Game:Click()`), category `ADDONS`; packed by `build.ps1`. |
+| `Bindings.xml` | `MAUCOOKIE_TOGGLE`, `MAUCOOKIE_CLICK`; packed by `build.ps1`. |
 
-Save (`MauCookieDB.save`): `cookies` (bank), `baked` (all time), `clicks`, `handmade`, `buildings[id] = count`, `upgrades[id] = true`, `achievements[id] = true`, `golden` (clicked), `playTime` (seconds logged in with the addon), `started`, `lastSeen` (server time, written every 5 s and at logout). Buffs are not saved.
+Save (`MauCookieDB.save`): `cookies`, `baked` (this run), `clicks`, `handmade`, `buildings[id]`, `upgrades[id]`, `achievements[id]`, `golden`, `playTime`, `started`, `prestige`, `chips` (unspent), `heavenly[id]`, `allTime` (cookies baked in previous runs; `Game:AllTime()` adds the current run), `ascensions`. `MauCookieDB.guild[guildName][playerName]` holds snapshots. Buffs are not saved.
 
 ## 3. Rules
 
-- Production per second: Σ count × `b.cps` × 2^(tiers of that building bought) × `GlobalMult`, where `GlobalMult = (1 + 0.02 × flavours) × (1 + 0.01 × achievements)`; times 7 during Frenzy. Click power: `(2^cursorTiers + Cps(true) × 0.01 × mice) × GlobalMult`, times 777 during Click Frenzy.
-- Prices: `floor(base × 1.15^owned)`; `Buy(b, n)` buys as many of n as affordable (shift-click = 10). Buildings show up to two past the highest owned (`IsRevealed`).
-- Upgrades: building tier k unlocks at `TIER_OWNED[k]` = 1/5/25/50/100 owned, costs base × `TIER_COST[k]` = 10/50/500/5000/50000; mice and flavours unlock at `cost / 10` cookies baked; luck upgrades at 7 / 27 golden cookies clicked. The upgrade grid shows available ones cheapest first, 28 at most ("and N more").
-- Golden cookie: next in 120–360 s divided by 2^luck, only counted down while the window is shown; shown for 13 s at a random spot in the window. Click: 8% Click Frenzy (x777 clicks, 13 s), 47% Frenzy (x7, 77 s), else Lucky (`min(bank × 0.15, cps × 900) + 13`).
-- Achievements are checked once a second; unlocking prints to chat, shows a banner in the left panel and bumps `Game.version` (which also changes on purchases) so the upgrade list is rescanned; the list is also rescanned every 2 s to catch unlocks by cookies baked.
-- Offline: at `Game:Start`, `away = now − lastSeen`; if ≥ 60 s and the option is on, `Cps(false) × min(away, 8 h) × 0.5` is added with a chat line. `/reload` is under 60 s so it does not pay.
-- The ticker frame is never hidden, so production runs with the window closed; `Tick` caps a frame's dt at 5 s. The window's own `OnUpdate` refreshes texts at 10 Hz and animates floats, the banner and the golden cookie pulse.
+- Production per second: Σ count × `b.cps` × 2^(tiers bought) × `GlobalMult`, with `GlobalMult = (1 + 0.02 × flavours) × (1 + 0.01 × achievements) × (1 + 0.01 × prestige) × 1.1 if Heavenly cookies × 1.25 if Heavenly key`; times 7 during Frenzy. Click power: `(2^cursorTiers + Cps(true) × 0.01 × mice) × GlobalMult`, times 777 during Click Frenzy.
+- Prices `floor(base × 1.15^owned)`; `Buy(b, n)` buys as many as affordable (shift = 10). Buildings show two past the highest owned.
+- Upgrades: building tier k at 1/5/25/50/100 owned, cost base × 10/50/500/5000/50000; mice and flavours at `cost / 10` baked this run; luck at 7 / 27 golden clicks. Grid shows available ones cheapest first, 28 max.
+- Golden cookie: next in 120–360 s ÷ 2^(luck upgrades + Heavenly luck), counted only while the window is shown, 13 s on screen. 8% Click Frenzy, 47% Frenzy, else Lucky `min(bank × 0.15, cps × 900) + 13`.
+- Ascension: prestige level = `floor((allTime / 1e10)^(1/3))`; `Ascend` requires at least one new chip, moves `baked` into `allTime`, sets `prestige`, adds the chips, resets cookies/buildings/upgrades, applies starter kits, bumps `ascensions`. Heavenly upgrades cost chips and persist. `Wipe` resets everything including prestige and heavenly upgrades.
+- `Game:Changed()` is the single hook after purchases, achievements, ascension and wipe: bumps `version` (upgrade grid rescan), refreshes the window, tells Comm.
+- The ticker frame is never hidden; `Tick` caps dt at 5 s, checks achievements once a second. No logout/login accounting at all.
 
-## 4. Client facts
+## 4. Art
 
-- Cookie icon: `C_Item.GetItemIconByID(17197)` (Gingerbread Cookie) with `Interface\Icons\INV_Misc_Food_19` as fallback; building icons are classic icon files (`Data.lua`). Icons are rounded with the `TempPortraitAlphaMask` mask (same as MauGuildMap / MauPlinko), including the cookie button's highlight texture.
-- `Texture:SetDesaturated(true)` greys out unaffordable store icons and upgrades.
-- Numbers are doubles; `Beautify` uses words from million to duodecillion (`math.log10`), `Commas` for below a million.
+`UI:ApplyArt` sets the cookie, golden cookie and store icons from the game (`C_Item.GetItemIconByID(17197)` with `INV_Misc_Food_19` fallback, classic icon files for buildings) or, with `customArt`, from `Interface\AddOns\MauCookie\Textures\<key>` (`cookie`, `golden`, `building_<id>`; no extension, the client resolves tga/blp/png; files are indexed at client start). The original game's art is copyrighted and must not be bundled; the option exists so the user can use art they are allowed to.
 
-## 5. How to verify
+## 5. Guild board (`Comm.lua`)
+
+- A snapshot `{ name, class, ts, prestige, allTime, run, cps, buildings, feats, golden, ascensions }` stamped with the owner's server time; **newest ts wins outright** (`Merge`), because wipes and ascensions make numbers shrink (MauPeggle's max-merge would not work here). Relays carry the owner's ts. Own name in a received record is ignored.
+- Wire: `S:<token>:<name>:<class>:<ts>:<prestige>:<allTime>:<run>:<cps>:<buildings>:<feats>:<golden>:<ascensions>` (one message; big numbers as `%.6g`, parsed with `tonumber`, split with `strsplit`), `I:<token>:<name>=<ts>,…`, `Q:<token>:<name>,…` (chunked at 235 bytes). Queue drained one per 0.25 s from the frame's OnTick (0.2 s accumulator).
+- When: `SendOwn` on `Game:Changed` coalesced to one per 10 s, and once a minute if `Signature` (3-significant-digit numbers) changed; `Announce` (own + inventory) 8 s after `PLAYER_ENTERING_WORLD`, 5 s after a guild change, when sharing is switched on; inventory on board open (≥ 5 min apart) and every 15 min if dirty. Inventory handling, requests, jitter and suppression are the same as MauPeggle's (`../MauPeggle/CLAUDE.md` section 8).
+- Online: roster from `GetGuildRosterInfo` on `GUILD_ROSTER_UPDATE` (refreshed via `C_GuildInfo.GuildRoster()`), `seen` for "bakery running". `Board(key)` sorts by the board's field, then `allTime`, then name; `NS.BOARDS` lists the five boards (allTime, run, cps, prestige, feats).
+
+## 6. How to verify
 
 1. Syntax: node + luaparse over every `.lua`.
-2. `/mck`: the window shows 0 cookies, the cookie, Cursor and Grandma in the store (grey). Click the cookie: +1 float, counter rises, click sound. Buy a cursor at 15: counter drops, owned shows 1, production 0.1/s, the counter creeps. Shift-click buys up to 10.
-3. Own 1 cursor: "Reinforced index finger" appears in the upgrades grid (grey until 150 cookies); buying it doubles cursor output and the click.
-4. Close the window, wait, reopen: cookies kept coming. `/reload`: no offline line (under a minute). Log out for a few minutes: an "away" chat line with half-rate cookies.
-5. Golden cookie: wait 2–6 minutes with the window open; it appears, pulses, and clicking gives a banner with the effect; Frenzy shows under the cookie with a countdown and the per-second number is x7.
-6. Stats and Feats overlays; Wipe save needs two clicks; achievements print and add 1% each (Stats shows the percentage).
+2. `/mck`: counter, cookie, Cursor and Grandma grey. Click: +1 float and sound. Buy a cursor; shift-click buys ten; upgrades appear at 1 / 5 / 25 cursors.
+3. Close the window, wait, reopen: cookies kept coming. Log out and back in: no "away" cookies and no chat line.
+4. Golden cookie within 2–6 minutes with the window open; Frenzy countdown under the cookie.
+5. Heaven: with under 1e10 all-time cookies it shows how many more are needed and Ascend is disabled; at 1e10 "+1 chip", two clicks ascend, the store is empty again, prestige 1 shows under the cookie and production is +1%; buy Heavenly cookies with 3 chips (after 2.7e11 all time) and see +10%.
+6. Stats: 17 lines including prestige, chips, ascensions, all runs. Wipe needs two clicks and zeroes everything.
+7. Guild board with another member: their bakery appears within a minute of their first purchase, tabs switch the ordering, tooltips show everything, online/offline marks. Wipe on one side: the other sees the zeroed snapshot after the next send.
+8. Custom art: put `cookie.tga` in `Textures\`, restart the client, tick the option: the cookie changes; untick: back to the game icon.

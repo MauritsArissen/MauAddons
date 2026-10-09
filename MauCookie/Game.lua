@@ -1,9 +1,10 @@
 -- MauCookie rules: production, clicking, buying, golden cookies, buffs,
--- achievements, offline cookies.
+-- achievements, ascension.
 --
 -- The bakery ticks from a frame that is always shown, so cookies keep
--- coming while the window is closed; the window only draws.  Golden
--- cookies wait while the window is closed so none are missed.
+-- coming while the window is closed; the window only draws.  Nothing is
+-- produced while logged out.  Golden cookies wait while the window is
+-- closed so none are missed.
 
 local _, NS = ...
 
@@ -22,17 +23,10 @@ function Game:Start()
 	self.buffs = {}
 	self.version = 0           -- bumped when buildings, upgrades or achievements change
 	self.nextGolden = self:RollGolden()
-	self:Offline()
 	self.ticker = CreateFrame("Frame")
 	self.ticker:SetScript("OnUpdate", function(_, elapsed)
 		NS.Guard("tick", Game.Tick, Game, elapsed)
 	end)
-end
-
-function Game:Save()
-	if self.save then
-		self.save.lastSeen = NS.Now()
-	end
 end
 
 -------------------------------------------------------------------------------
@@ -45,6 +39,10 @@ end
 
 function Game:HasUpgrade(id)
 	return self.save.upgrades[id] == true
+end
+
+function Game:HasHeavenly(id)
+	return self.save.heavenly[id] == true
 end
 
 function Game:Tiers(buildingId)
@@ -91,8 +89,21 @@ function Game:CountKind(kind)
 	return n
 end
 
+-- Cookies baked over every run, this one included.
+function Game:AllTime()
+	return (self.save.allTime or 0) + self.save.baked
+end
+
 function Game:GlobalMult()
-	return (1 + 0.02 * self:CountKind("flavour")) * (1 + 0.01 * self:AchievementsUnlocked())
+	local mult = (1 + 0.02 * self:CountKind("flavour")) * (1 + 0.01 * self:AchievementsUnlocked())
+	mult = mult * (1 + 0.01 * (self.save.prestige or 0))
+	if self:HasHeavenly("heavenlycookies") then
+		mult = mult * 1.1
+	end
+	if self:HasHeavenly("heavenlykey") then
+		mult = mult * 1.25
+	end
+	return mult
 end
 
 -- Production of one building of this kind per second (without buffs).
@@ -190,9 +201,8 @@ function Game:Buy(b, amount)
 		bought = bought + 1
 	end
 	if bought > 0 then
-		self.version = self.version + 1
+		self:Changed()
 		NS.PlayKit("LOOT_WINDOW_COIN_SOUND")
-		NS.UI:Refresh(true)
 	end
 	return bought
 end
@@ -233,9 +243,78 @@ function Game:BuyUpgrade(u)
 	end
 	self.save.cookies = self.save.cookies - u.cost
 	self.save.upgrades[u.id] = true
-	self.version = self.version + 1
+	self:Changed()
 	NS.PlayKit("IG_BACKPACK_COIN_OK")
+	return true
+end
+
+-- Something that the window and the guild board care about changed.
+function Game:Changed()
+	self.version = self.version + 1
 	NS.UI:Refresh(true)
+	NS.Comm:OnChanged()
+end
+
+-------------------------------------------------------------------------------
+-- Ascension
+-------------------------------------------------------------------------------
+
+function Game:PrestigeFor(total)
+	if total <= 0 then
+		return 0
+	end
+	return math.floor((total / NS.PRESTIGE_BASE) ^ (1 / 3))
+end
+
+-- Chips an ascension would give right now, and the level it would reach.
+function Game:AscendPreview()
+	local level = self:PrestigeFor(self:AllTime())
+	return math.max(0, level - (self.save.prestige or 0)), level
+end
+
+-- Cookies still needed for the next chip.
+function Game:CookiesToNextChip()
+	local nextLevel = self:PrestigeFor(self:AllTime()) + 1
+	return math.max(0, (nextLevel ^ 3) * NS.PRESTIGE_BASE - self:AllTime())
+end
+
+function Game:Ascend()
+	local gain, level = self:AscendPreview()
+	if gain <= 0 then
+		return false
+	end
+	local save = self.save
+	save.allTime = (save.allTime or 0) + save.baked
+	save.prestige = level
+	save.chips = (save.chips or 0) + gain
+	save.ascensions = (save.ascensions or 0) + 1
+	save.cookies, save.baked = 0, 0
+	save.buildings, save.upgrades = {}, {}
+	if self:HasHeavenly("starterkit") then
+		save.buildings.cursor = 10
+	end
+	if self:HasHeavenly("starterkitchen") then
+		save.buildings.grandma = 5
+	end
+	self.buffs = {}
+	self.goldenShown = nil
+	self.nextGolden = self:RollGolden()
+	NS.UI:HideGolden()
+	NS.Print("Ascended! +%d heavenly chip%s, prestige level %d (production +%d%%).", gain, gain == 1 and "" or "s", level, level)
+	NS.UI:Banner(string.format("Ascended! +%d chips", gain))
+	NS.PlayKit("UI_LEGENDARY_LOOT_TOAST")
+	self:Changed()
+	return true
+end
+
+function Game:BuyHeavenly(h)
+	if self:HasHeavenly(h.id) or (self.save.chips or 0) < h.cost then
+		return false
+	end
+	self.save.chips = self.save.chips - h.cost
+	self.save.heavenly[h.id] = true
+	NS.PlayKit("UI_EPICLOOT_TOAST")
+	self:Changed()
 	return true
 end
 
@@ -244,8 +323,8 @@ end
 -------------------------------------------------------------------------------
 
 function Game:RollGolden()
-	local divisor = 2 ^ self:CountKind("luck")
-	return (self.GOLDEN_MIN + math.random() * (self.GOLDEN_MAX - self.GOLDEN_MIN)) / divisor
+	local luck = self:CountKind("luck") + (self:HasHeavenly("heavenlyluck") and 1 or 0)
+	return (self.GOLDEN_MIN + math.random() * (self.GOLDEN_MAX - self.GOLDEN_MIN)) / (2 ^ luck)
 end
 
 function Game:AddBuff(key, duration, label)
@@ -331,11 +410,6 @@ function Game:Tick(dt)
 		self.achAcc = 0
 		self:CheckAchievements()
 	end
-	self.saveAcc = (self.saveAcc or 0) + dt
-	if self.saveAcc >= 5 then
-		self.saveAcc = 0
-		self:Save()
-	end
 end
 
 function Game:CheckAchievements()
@@ -343,31 +417,12 @@ function Game:CheckAchievements()
 	for _, a in ipairs(NS.ACHIEVEMENTS) do
 		if not save.achievements[a.id] and a.check(save, self) then
 			save.achievements[a.id] = true
-			self.version = self.version + 1
 			NS.Print("Achievement unlocked: |cffffd100%s|r (%s) Production +1%%.", a.name, a.desc)
 			NS.UI:Banner("Achievement: " .. a.name)
 			NS.PlayKit("UI_WORLDQUEST_COMPLETE")
-			NS.UI:Refresh(true)
+			self:Changed()
 		end
 	end
-end
-
--- Cookies for the time logged out, at half rate, up to eight hours.
-function Game:Offline()
-	local save = self.save
-	local away = NS.Now() - (save.lastSeen or NS.Now())
-	save.lastSeen = NS.Now()
-	if not NS.GetSettings().offline or away < 60 then
-		return
-	end
-	local cps = self:Cps(false)
-	if cps <= 0 then
-		return
-	end
-	local credited = math.min(away, NS.OFFLINE_CAP)
-	local gain = cps * credited * NS.OFFLINE_RATE
-	self:Gain(gain)
-	NS.Print("While you were away (%s) your bakery made %s cookies (half rate, up to %d hours).", NS.FormatDuration(away), NS.Beautify(gain), NS.OFFLINE_CAP / 3600)
 end
 
 function Game:Wipe()
@@ -376,8 +431,7 @@ function Game:Wipe()
 	self.buffs = {}
 	self.goldenShown = nil
 	self.nextGolden = self:RollGolden()
-	self.version = self.version + 1
 	NS.UI:HideGolden()
-	NS.UI:Refresh(true)
 	NS.Print("The bakery starts over.")
+	self:Changed()
 end

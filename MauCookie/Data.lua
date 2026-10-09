@@ -107,6 +107,19 @@ for _, u in ipairs(NS.UPGRADES) do
 	NS.UPGRADE_BY_ID[u.id] = u
 end
 
+-- Heavenly upgrades: bought with heavenly chips, kept across ascensions.
+NS.HEAVENLY = {
+	{ id = "heavenlycookies", name = "Heavenly cookies", cost = 3, desc = "Cookie production +10%." },
+	{ id = "starterkit", name = "Starter kit", cost = 50, desc = "You start every ascension with 10 cursors." },
+	{ id = "heavenlyluck", name = "Heavenly luck", cost = 77, desc = "Golden cookies appear twice as often." },
+	{ id = "starterkitchen", name = "Starter kitchen", cost = 100, desc = "You start every ascension with 5 grandmas." },
+	{ id = "heavenlykey", name = "Heavenly key", cost = 500, desc = "Cookie production +25%." },
+}
+NS.HEAVENLY_BY_ID = {}
+for _, h in ipairs(NS.HEAVENLY) do
+	NS.HEAVENLY_BY_ID[h.id] = h
+end
+
 -- Achievements: { id, name, desc, check(save, game) }.  Each unlocked one
 -- adds 1% to production.
 NS.ACHIEVEMENTS = {}
@@ -178,6 +191,14 @@ for i, a in ipairs(UPGRADED) do
 	local n = a[2]
 	Ach("upg" .. i, a[1], "Buy " .. n .. " upgrades.", function(_, game)
 		return game:UpgradesBought() >= n
+	end)
+end
+
+local ASCENDED = { { "Sacrifice", 1 }, { "Oblivion", 5 }, { "From scratch", 10 } }
+for i, a in ipairs(ASCENDED) do
+	local n = a[2]
+	Ach("asc" .. i, a[1], "Ascend " .. n .. " time" .. (n == 1 and "" or "s") .. ".", function(save)
+		return (save.ascensions or 0) >= n
 	end)
 end
 

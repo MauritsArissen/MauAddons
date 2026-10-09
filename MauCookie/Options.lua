@@ -53,12 +53,15 @@ function Options:Register()
 	end
 
 	Header(layout, "Bakery")
-	Checkbox("sounds", "Sounds", "Clicks, purchases, golden cookies and achievements.")
+	Checkbox("sounds", "Sounds", "Clicks, purchases, golden cookies, achievements and ascension.")
 	Checkbox("popups", "Click popups", "A small +cookies text where you click the cookie.")
-	Checkbox("offline", "Cookies while logged out", "On login, the time since you were last seen is paid out at half your production, up to eight hours.")
 
 	Header(layout, "Window")
 	Slider("scale", "Window size", "Scale of the bakery window. Drag the window to move it.", Percent)
+	Checkbox("customArt", "Use my own art from the Textures folder", "Reads cookie, golden and building_<id> image files (TGA, BLP or PNG) from Interface\\AddOns\\MauCookie\\Textures. New files need a full client restart. See the README for the names.")
+
+	Header(layout, "Guild")
+	Checkbox("shareScores", "Share my bakery with the guild", "A snapshot of your bakery (cookies baked, per second, prestige, buildings, achievements) goes to guild members who use MauCookie, and you keep and pass on theirs. Nothing goes to guild chat.")
 
 	Settings.RegisterAddOnCategory(category)
 end
@@ -66,6 +69,13 @@ end
 function Options:OnChanged(key)
 	if key == "scale" then
 		NS.UI:ApplyScale()
+	elseif key == "customArt" then
+		NS.UI:ApplyArt()
+	elseif key == "shareScores" then
+		if NS.GetSettings().shareScores then
+			NS.Comm:Announce()
+		end
+		NS.UI:OnGuildDataChanged()
 	end
 end
 
