@@ -2,7 +2,7 @@
 ## Title: MauLootbox
 ## Notes: Every loot window becomes a lootbox: a slot machine reel spins and lands on each item before it goes into your bags.
 ## Author: Gamer
-## Version: 0.1.0
+## Version: 0.1.1
 ## SavedVariables: MauLootboxDB
 ## IconTexture: Interface\Icons\INV_Misc_Gift_01
 ## X-Game: World of Warcraft: Forever (1.60.x)

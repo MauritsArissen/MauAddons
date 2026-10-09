@@ -11,6 +11,9 @@
 -- With the game's own auto-loot (or a shift-click) the client takes the
 -- items itself the instant the window opens; the reel still plays as a
 -- reveal and the already-cleared slots are simply not taken again.
+--
+-- Every event handler runs under NS.Guard so a Lua error is printed to chat
+-- instead of silently killing the loot; /mlb debug prints each step.
 
 local _, NS = ...
 
@@ -44,7 +47,7 @@ local function ReadSlot(slot)
 		return nil
 	end
 	local slotType = GetLootSlotType and GetLootSlotType(slot)
-	return {
+	local entry = {
 		slot = slot,
 		texture = texture,
 		name = name or "",
@@ -53,8 +56,12 @@ local function ReadSlot(slot)
 		locked = locked and true or false,
 		quest = isQuestItem and true or false,
 		coin = (isCoin or slotType == SLOT_MONEY) and true or false,
-		link = GetLootSlotLink and GetLootSlotLink(slot) or nil,
+		slotType = slotType,
 	}
+	if GetLootSlotLink and not entry.coin then
+		entry.link = GetLootSlotLink(slot)
+	end
+	return entry
 end
 
 function Loot:OnLootOpened(autoLoot, isFromItem)
@@ -62,41 +69,59 @@ function Loot:OnLootOpened(autoLoot, isFromItem)
 		return
 	end
 	local settings = NS.GetSettings()
+	local numItems = GetNumLootItems() or 0
+	NS.Debug("LOOT_OPENED autoLoot=%s fromItem=%s slots=%d", tostring(autoLoot), tostring(isFromItem), numItems)
+
 	self.entries = {}
 	self.cleared = {}
 	self.pending = {}
 	self.bagsFull = false
 	self.autoLoot = autoLoot and true or false
 
-	local show = {}
-	for slot = 1, GetNumLootItems() do
+	local show, instant = {}, {}
+	for slot = 1, numItems do
 		local entry = ReadSlot(slot)
 		if entry then
 			self.entries[slot] = entry
+			NS.Debug("slot %d: %s  type=%s coin=%s locked=%s quality=%s x%s", slot, entry.name, tostring(entry.slotType),
+				tostring(entry.coin), tostring(entry.locked), tostring(entry.quality), tostring(entry.quantity))
 			if entry.locked then
 				entry.reason = "Not yours to take"
-			elseif entry.coin and settings.coinsInstant then
-				self:Take(entry)
-			elseif entry.quality < settings.minQuality then
-				self:Take(entry)
+			elseif (entry.coin and settings.coinsInstant) or entry.quality < settings.minQuality then
+				instant[#instant + 1] = entry
 			else
 				show[#show + 1] = entry
 			end
+		else
+			NS.Debug("slot %d: empty", slot)
 		end
 	end
 
+	-- Instant takes go out just after the event has been fully processed,
+	-- not from inside the handler.
+	if #instant > 0 then
+		C_Timer.After(0, function()
+			for _, entry in ipairs(instant) do
+				NS.Guard("instant take", self.Take, self, entry)
+			end
+		end)
+	end
+
 	if #show == 0 then
+		NS.Debug("nothing to spin, finishing")
+		self.state = "showing"
 		self:Finish()
 		return
 	end
 
 	self.state = "showing"
+	NS.Debug("spinning %d item(s)", #show)
 	NS.Reel:Begin(show, {
 		onLanded = function(entry)
-			self:Take(entry)
+			NS.Guard("take on landing", self.Take, self, entry)
 		end,
 		onFinished = function()
-			self:Finish()
+			NS.Guard("finish", self.Finish, self)
 		end,
 		onSkip = function()
 			NS.Reel:FinishNow()
@@ -112,14 +137,25 @@ end
 -------------------------------------------------------------------------------
 
 function Loot:Take(entry)
-	if self.testMode or not entry or self.cleared[entry.slot] or entry.locked then
+	if self.testMode or not entry or entry.locked then
+		return
+	end
+	if self.cleared[entry.slot] then
+		NS.Debug("slot %d already cleared", entry.slot)
 		return
 	end
 	if self.bagsFull and not entry.coin then
 		entry.reason = "Bags full"
+		NS.Debug("slot %d not taken: bags full", entry.slot)
+		return
+	end
+	if not GetLootSlotInfo(entry.slot) then
+		NS.Debug("slot %d is gone", entry.slot)
+		self.cleared[entry.slot] = true
 		return
 	end
 	self.pending[entry.slot] = GetTime()
+	NS.Debug("LootSlot(%d) %s", entry.slot, entry.name)
 	LootSlot(entry.slot)
 end
 
@@ -127,6 +163,7 @@ function Loot:OnSlotCleared(slot)
 	if self.testMode then
 		return
 	end
+	NS.Debug("slot %d cleared", slot)
 	self.cleared = self.cleared or {}
 	self.cleared[slot] = true
 	if self.pending then
@@ -156,6 +193,7 @@ function Loot:Finish()
 				end
 			end
 		end
+		NS.Debug("finish: %d leftover(s)", #leftovers)
 		if #leftovers > 0 then
 			self.state = "leftovers"
 			NS.Reel:ShowLeftovers(leftovers, function(entry)
@@ -163,6 +201,7 @@ function Loot:Finish()
 				-- automatic take did not.
 				self.bagsFull = false
 				self.pending[entry.slot] = GetTime()
+				NS.Debug("LootSlot(%d) by click", entry.slot)
 				LootSlot(entry.slot)
 			end)
 		else
@@ -172,6 +211,7 @@ function Loot:Finish()
 end
 
 function Loot:Close()
+	NS.Debug("close")
 	self.state = "idle"
 	NS.Reel:HideLeftovers()
 	NS.Reel:Abort()
@@ -184,6 +224,7 @@ function Loot:OnLootClosed()
 	if self.testMode then
 		return
 	end
+	NS.Debug("LOOT_CLOSED")
 	self.state = "idle"
 	self.entries = nil
 	NS.Reel:HideLeftovers()
@@ -194,7 +235,7 @@ end
 -- Events
 -------------------------------------------------------------------------------
 
-Loot:SetScript("OnEvent", function(self, event, arg1, arg2)
+local function HandleEvent(self, event, arg1, arg2)
 	if event == "LOOT_OPENED" then
 		self:OnLootOpened(arg1, arg2)
 	elseif event == "LOOT_SLOT_CLEARED" then
@@ -202,6 +243,7 @@ Loot:SetScript("OnEvent", function(self, event, arg1, arg2)
 	elseif event == "LOOT_CLOSED" then
 		self:OnLootClosed()
 	elseif event == "LOOT_BIND_CONFIRM" then
+		NS.Debug("LOOT_BIND_CONFIRM slot %s", tostring(arg1))
 		if self.state ~= "idle" and NS.GetSettings().autoConfirmBind and not IsInGroup() and ConfirmLootSlot then
 			ConfirmLootSlot(arg1)
 			if StaticPopup_Hide then
@@ -209,8 +251,15 @@ Loot:SetScript("OnEvent", function(self, event, arg1, arg2)
 			end
 		end
 	elseif event == "UI_ERROR_MESSAGE" then
-		if self.state ~= "idle" and arg2 == ERR_INV_FULL then
-			self.bagsFull = true
+		if self.state ~= "idle" then
+			NS.Debug("UI error: %s", tostring(arg2))
+			if arg2 == ERR_INV_FULL then
+				self.bagsFull = true
+			end
 		end
 	end
+end
+
+Loot:SetScript("OnEvent", function(self, event, arg1, arg2)
+	NS.Guard(event, HandleEvent, self, event, arg1, arg2)
 end)

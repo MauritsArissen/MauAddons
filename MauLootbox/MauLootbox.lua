@@ -50,6 +50,23 @@ function NS.Print(fmt, ...)
 	print("|cff9ecbffMauLootbox:|r " .. tostring(msg))
 end
 
+-- Step-by-step chat output, toggled with /mlb debug (MauLootboxDB.debug).
+function NS.Debug(fmt, ...)
+	if MauLootboxDB and MauLootboxDB.debug then
+		NS.Print("|cff808080" .. string.format(fmt, ...) .. "|r")
+	end
+end
+
+-- Run f and report any Lua error in chat, so a failure shows up even when
+-- the game's script error display is off.
+function NS.Guard(where, f, ...)
+	local ok, err = pcall(f, ...)
+	if not ok then
+		NS.Print("|cffff3333Error in %s:|r %s", where, tostring(err))
+	end
+	return ok
+end
+
 function NS.QualityColor(quality)
 	quality = quality or 1
 	if C_Item and C_Item.GetItemQualityColor then
@@ -159,6 +176,9 @@ SlashCmdList.MAULOOTBOX = function(msg)
 	msg = (msg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
 	if msg == "test" then
 		NS.Test:Run()
+	elseif msg == "debug" then
+		MauLootboxDB.debug = not MauLootboxDB.debug
+		NS.Print("Debug output %s.", MauLootboxDB.debug and "on: loot something and the steps are printed here" or "off")
 	else
 		NS.Options:Open()
 	end

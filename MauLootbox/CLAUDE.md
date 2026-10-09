@@ -44,6 +44,10 @@ Settings (`MauLootboxDB.settings`, defaults in `NS.DEFAULTS`): `enabled` true, `
 - Timing: `SPIN_TIME` / `HOLD_TIME` per quality (1.3 s / 0.7 s for Poor up to 4.2 s / 2.0 s for Legendary) times `speed / 100`; cubic ease-out (`EaseOutCubic`) so the reel decelerates. The loop sound starts with the spin and is stopped on landing; the landing sound depends on quality.
 - `FinishNow` fires `onLanded` for every item not yet landed (the current one too if still spinning) and then `onFinished`. `Abort` stops sounds and hides. `ShowLeftovers(entries, onTake)` reuses the window: buttons in the view, tooltip with the reason.
 
+## 5b. Debugging (0.1.1)
+
+`/mlb debug` toggles `MauLootboxDB.debug`; with it on, `NS.Debug` prints every step to chat: the `LOOT_OPENED` arguments and slot count, each slot (name, slot type, coin, locked, quality, quantity), every `LootSlot` call, every `LOOT_SLOT_CLEARED`, UI errors, the leftover count and `LOOT_CLOSED`. All loot event handlers run through `NS.Guard` (pcall + chat line), so a Lua error is visible without `/console scriptErrors 1`. Instant takes (coins, below minimum quality) are issued from a 0 s timer after the event, not inside the handler. First report (2026-10-09): skinning loot worked, corpse loot did not and nothing was received; the coin path was the only difference, cause not yet known.
+
 ## 6. How to verify
 
 1. Syntax: node + luaparse over every `.lua`.
