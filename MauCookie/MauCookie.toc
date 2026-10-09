@@ -1,0 +1,14 @@
+## Interface: 16001
+## Title: MauCookie
+## Notes: Cookie Clicker in game: click the cookie, buy grandmas and farms, bake billions. /mck opens it.
+## Author: Maurits Arissen
+## Version: 0.1.0
+## SavedVariables: MauCookieDB
+## IconTexture: Interface\Icons\INV_Misc_Food_19
+## AddonCompartmentFunc: MauCookie_OnAddonCompartmentClick
+
+MauCookie.lua
+Data.lua
+Game.lua
+UI.lua
+Options.lua

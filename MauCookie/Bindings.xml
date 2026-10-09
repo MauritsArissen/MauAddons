@@ -1,0 +1,4 @@
+<Bindings>
+	<Binding name="MAUCOOKIE_TOGGLE" category="ADDONS">MauCookie.UI:Toggle()</Binding>
+	<Binding name="MAUCOOKIE_CLICK" category="ADDONS">MauCookie.Game:Click()</Binding>
+</Bindings>
