@@ -1,0 +1,3 @@
+<Bindings>
+	<Binding name="MAUPEGGLE_TOGGLE" category="ADDONS">MauPeggle.UI:Toggle()</Binding>
+</Bindings>
