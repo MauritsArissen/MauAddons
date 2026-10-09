@@ -1,0 +1,4 @@
+<Bindings>
+	<Binding name="MAUPLINKO_TOGGLE" category="ADDONS">MauPlinko.UI:Toggle()</Binding>
+	<Binding name="MAUPLINKO_DROP" category="ADDONS">MauPlinko.Game:DropFromBinding()</Binding>
+</Bindings>

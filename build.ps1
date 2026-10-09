@@ -54,6 +54,11 @@ $packageDir = Join-Path $staging $Addon
 New-Item -ItemType Directory -Path $packageDir | Out-Null
 try {
 	Copy-Item $toc (Join-Path $packageDir "$Addon.toc")
+	# Bindings.xml is loaded by the game by name and never appears in the TOC.
+	$bindings = Join-Path $source 'Bindings.xml'
+	if (Test-Path $bindings) {
+		Copy-Item $bindings (Join-Path $packageDir 'Bindings.xml')
+	}
 	foreach ($file in $files) {
 		$from = Join-Path $source $file
 		if (-not (Test-Path $from)) {

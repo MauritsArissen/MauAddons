@@ -1,0 +1,16 @@
+## Interface: 16001
+## Title: MauPlinko
+## Notes: Plinko in game: drop balls down a peg board for virtual chips whenever you are bored. /mpk opens the board.
+## Author: Maurits Arissen
+## Version: 0.1.0
+## SavedVariables: MauPlinkoDB
+## IconTexture: Interface\Icons\INV_Misc_Coin_02
+## AddonCompartmentFunc: MauPlinko_OnAddonCompartmentClick
+
+MauPlinko.lua
+Tables.lua
+Game.lua
+Board.lua
+UI.lua
+Comm.lua
+Options.lua
