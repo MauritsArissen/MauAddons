@@ -110,6 +110,7 @@ function Comm:Merge(rec)
 		store[rec.name] = cur
 		changed = true
 	end
+	cur.name = rec.name
 	cur.best = cur.best or {}
 	if rec.class and rec.class ~= "" and cur.class ~= rec.class then
 		cur.class = rec.class
@@ -174,8 +175,13 @@ function Comm:SendChunked(header, items, separator, always)
 	end
 end
 
-function Comm:SendRecord(rec)
-	local header = string.format("R:%s:%s:%s:%d:%d:%d:", self.token, rec.name, rec.class or "", rec.unlocked or 1, rec.total or 0, rec.ts or 0)
+-- `name` is the store key; older stores may hold records without a name field.
+function Comm:SendRecord(name, rec)
+	name = name or rec.name
+	if not name then
+		return
+	end
+	local header = string.format("R:%s:%s:%s:%d:%d:%d:", self.token, name, rec.class or "", math.floor(rec.unlocked or 1), math.floor(rec.total or 0), math.floor(rec.ts or 0))
 	local levels = {}
 	for level in pairs(rec.best or {}) do
 		table.insert(levels, level)
@@ -183,11 +189,11 @@ function Comm:SendRecord(rec)
 	table.sort(levels)
 	local items = {}
 	for _, level in ipairs(levels) do
-		table.insert(items, string.format("%d=%d", level, rec.best[level]))
+		table.insert(items, string.format("%d=%d", math.floor(level), math.floor(rec.best[level])))
 	end
 	self:SendChunked(header, items, ",", true)
-	self.recent[rec.name] = { ts = rec.ts or 0, at = GetTime() }
-	if rec.name == self.playerName then
+	self.recent[name] = { ts = rec.ts or 0, at = GetTime() }
+	if name == self.playerName then
 		self.lastOwn = GetTime()
 	end
 end
@@ -200,7 +206,7 @@ function Comm:SendOwn()
 	local store = self:Store()
 	local rec = store and store[self.playerName]
 	if rec and (rec.ts or 0) > 0 then
-		self:SendRecord(rec)
+		self:SendRecord(self.playerName, rec)
 	end
 end
 
@@ -438,7 +444,7 @@ function Comm:OnTick(elapsed)
 				local seen = self.recent[name]
 				local covered = seen and seen.ts >= (rec and rec.ts or 0) and now - seen.at < RECENT_WINDOW
 				if rec and (rec.ts or 0) > 0 and not covered then
-					self:SendRecord(rec)
+					self:SendRecord(name, rec)
 				end
 			end
 		end

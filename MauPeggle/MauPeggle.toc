@@ -2,7 +2,7 @@
 ## Title: MauPeggle
 ## Notes: Peggle in game: shoot a ball through a board of pegs, clear the orange ones, catch free balls, ride the fever, beat your guild. /pgl opens it.
 ## Author: Maurits Arissen
-## Version: 0.2.1
+## Version: 0.2.2
 ## SavedVariables: MauPeggleDB
 ## IconTexture: Interface\Icons\INV_Misc_Orb_05
 ## AddonCompartmentFunc: MauPeggle_OnAddonCompartmentClick
