@@ -16,7 +16,7 @@ Type `/pgl` (or `/peggle`) and a board of pegs opens with a launcher at the top.
 
 ## Powers
 
-Each level comes with a power, and the button under the board lets you pick another one. A green peg triggers it:
+In the original's adventure every level comes with its own master; in quick play you choose one. Both work here: each level starts with its own power, and the Power button under the board opens a picker with all six. Tick "Keep my pick for every level" to play every board with your favourite. A green peg triggers the power:
 
 * **Super Guide**: shows the full path of the ball, bounces included, for the next three shots.
 * **Multiball**: splits off a second ball.
@@ -29,9 +29,15 @@ Each level comes with a power, and the button under the board lets you pick anot
 
 Twelve designed boards with Azeroth names (Goldshire Grid, Dun Morogh Diamonds, Barrens Rings, Westfall Chevrons, Stormwind Pillars, Thunder Bluff Smile, Darkshore Waves, Maelstrom Spiral, Un'Goro Honeycomb, Ironforge Fortress, Thousand Needles Stairs, Deadmines Scatter), then "Uncharted" boards for as long as you like. Clearing a level unlocks the next. The Levels button shows what is unlocked, your best score per level and your overall statistics.
 
+## Guild board
+
+The Guild button shows two lists: the best scores of guild members on the level you are playing, and everyone's progress (highest level cleared, total score), with who is online. Hovering a level in the level select shows its guild top three, and the result screen tells you where your score lands.
+
+Scores travel over the guild addon channel, never guild chat, and are kept in your saved variables, so members who are offline stay on the board and whoever has a copy can pass it on. The traffic is small: your own record goes out when a best score or unlock changes (at most every ten seconds), and on login everyone compares notes with an inventory of names and timestamps, after which only the missing records are sent, once, by whoever has them. Sharing can be turned off in the options.
+
 ## Options
 
-`/pgl options` or Escape > Options > AddOns > MauPeggle: sounds, score popups, fever slow motion and the window size. A key binding for opening the game is under Options > Key Bindings > AddOns, and the game is listed in the minimap's addon compartment.
+`/pgl options` or Escape > Options > AddOns > MauPeggle: sounds, score popups, fever slow motion, the window size and score sharing. A key binding for opening the game is under Options > Key Bindings > AddOns, and the game is listed in the minimap's addon compartment.
 
 ## Install
 
@@ -44,8 +50,9 @@ The folder that contains this README *is* the addon folder. The game has to see 
 * `Physics.lua` - the ball simulation: gravity, pegs, bricks, walls, bucket, aim prediction.
 * `Levels.lua` - the designed boards and the procedural ones.
 * `Game.lua` - the rules: shots, scoring, powers, fever, level progress.
+* `Comm.lua` - the guild board: score exchange and relay over the addon channel.
 * `Board.lua` - everything drawn inside the play field.
-* `UI.lua` - the window, the status lines, the level select and result screens.
+* `UI.lua` - the window, the status lines, the level select, power picker, guild board and result screens.
 * `Options.lua` - the page in the game's Settings > AddOns panel.
 * `Bindings.xml` - the key binding.
 * `CLAUDE.md` - full technical documentation.

@@ -60,12 +60,20 @@ function Options:Register()
 	Header(layout, "Window")
 	Slider("scale", "Window size", "Scale of the game window. Drag the window to move it.", Percent)
 
+	Header(layout, "Guild")
+	Checkbox("shareScores", "Share scores with the guild", "Your best score per level, highest level and total go to guild members who use MauPeggle, and you keep and pass on theirs, so the guild board also shows people who are offline. Nothing goes to guild chat.")
+
 	Settings.RegisterAddOnCategory(category)
 end
 
 function Options:OnChanged(key)
 	if key == "scale" then
 		NS.UI:ApplyScale()
+	elseif key == "shareScores" then
+		if NS.GetSettings().shareScores then
+			NS.Comm:Announce()
+		end
+		NS.UI:OnGuildDataChanged()
 	end
 end
 

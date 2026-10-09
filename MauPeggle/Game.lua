@@ -115,7 +115,13 @@ function Game:StartLevel(index)
 	self.bucket = { x = P.W / 2, y = P.H - 12, half = 36, t = 0 }
 	self.world.bucket = self.bucket
 	self.slowmo, self.acc = 0, 0
-	self.power = level.power
+	local settings = NS.GetSettings()
+	if settings.powerMode == "chosen" and NS.POWER_INFO[settings.chosenPower] then
+		self.power = settings.chosenPower
+	else
+		self.power = level.power
+	end
+	self.levelPower = level.power
 	self.state = "aim"
 	self:Progress().last = index
 
@@ -143,6 +149,7 @@ end
 function Game:SetPower(key)
 	if NS.POWER_INFO[key] then
 		self.power = key
+		NS.GetSettings().chosenPower = key
 		NS.UI:RefreshAll()
 	end
 end
@@ -500,6 +507,7 @@ function Game:LevelWon()
 	local total = self.score + self.feverBonus + self.ballBonus
 	self.levelTotal = total
 	local progress, stats = self:Progress(), self:Stats()
+	local unlockedBefore = progress.unlocked
 	progress.unlocked = math.max(progress.unlocked, self.level + 1)
 	local best = progress.best[self.level]
 	self.newBest = (not best) or total > best
@@ -511,6 +519,14 @@ function Game:LevelWon()
 	if total > stats.bestLevel then
 		stats.bestLevel = total
 	end
+	-- The guild board: the record changed whenever a best or the unlock did.
+	progress.updated = NS.Now()
+	if self.newBest or progress.unlocked ~= unlockedBefore then
+		NS.Comm:OnProgressChanged()
+	else
+		NS.Comm:RefreshOwn()
+	end
+	self.guildRank, self.guildCount = NS.Comm:GuildRank(self.level, progress.best[self.level] or total)
 	NS.Board:FeverEnd()
 	NS.UI:ShowResult(true)
 	NS.PlayKit("LFG_REWARDS")

@@ -6,10 +6,11 @@
 -- Clear all the orange pegs to finish the level: the last one starts the
 -- fever and the ball drops into a bonus bin.  A moving bucket at the bottom
 -- catches the ball for a free ball, 25,000 points in one shot gives another.
--- Green pegs trigger the level's power, the purple peg is worth extra and
--- moves every shot.  Physics.lua is the simulation, Levels.lua the boards,
--- Game.lua the rules and scoring, Board.lua the drawing, UI.lua the window,
--- Options.lua the settings page.  /pgl toggles the window.  See CLAUDE.md.
+-- Green pegs trigger a power, the purple peg is worth extra and moves every
+-- shot.  Physics.lua is the simulation, Levels.lua the boards, Game.lua the
+-- rules and scoring, Comm.lua the guild board, Board.lua the drawing,
+-- UI.lua the window, Options.lua the settings page.  /pgl toggles the
+-- window.  See CLAUDE.md.
 
 local ADDON_NAME, NS = ...
 _G.MauPeggle = NS
@@ -18,9 +19,12 @@ NS.ADDON_NAME = ADDON_NAME
 
 NS.DEFAULTS = {
 	sounds = true,
-	popups = true,    -- "+120" at every lit peg
-	slowmo = true,    -- slow motion when the last orange peg falls
-	scale = 100,      -- percent
+	popups = true,          -- "+120" at every lit peg
+	slowmo = true,          -- slow motion when the last orange peg falls
+	scale = 100,            -- percent
+	shareScores = true,     -- guild board: send and relay scores
+	powerMode = "level",    -- "level": each level's own power; "chosen": always chosenPower
+	chosenPower = "guide",
 }
 
 NS.RANGES = {
@@ -76,6 +80,35 @@ function NS.Commas(n)
 	return (n < 0 and "-" or "") .. s
 end
 
+-- "Name-Realm" -> "Name"
+function NS.ShortName(name)
+	if not name or name == "" then
+		return nil
+	end
+	return (name:match("^([^%-]+)"))
+end
+
+function NS.ClassColor(classFile)
+	local color
+	if classFile and C_ClassColor and C_ClassColor.GetClassColor then
+		color = C_ClassColor.GetClassColor(classFile)
+	end
+	if not color and classFile and RAID_CLASS_COLORS then
+		color = RAID_CLASS_COLORS[classFile]
+	end
+	if color then
+		return color.r, color.g, color.b
+	end
+	return 0.8, 0.8, 0.8
+end
+
+function NS.Now()
+	if GetServerTime then
+		return GetServerTime()
+	end
+	return time()
+end
+
 function NS.NewStats()
 	return { levelsCleared = 0, shots = 0, pegs = 0, fevers = 0, freeBalls = 0, bestShot = 0, bestLevel = 0 }
 end
@@ -96,18 +129,32 @@ function NS.InitDB()
 	for key, range in pairs(NS.RANGES) do
 		db.settings[key] = NS.Clamp(db.settings[key], range[1], range[2])
 	end
+	if db.settings.powerMode ~= "level" and db.settings.powerMode ~= "chosen" then
+		db.settings.powerMode = "level"
+	end
+	if not NS.POWER_INFO[db.settings.chosenPower] then
+		db.settings.chosenPower = NS.DEFAULTS.chosenPower
+	end
+
 	db.progress = db.progress or {}
 	local p = db.progress
 	p.unlocked = math.max(1, math.floor(p.unlocked or 1))
 	p.last = math.max(1, math.min(p.unlocked, math.floor(p.last or 1)))
 	p.best = p.best or {}
 	p.total = p.total or 0
+	if not p.updated then
+		-- Existing progress from before the guild board gets a timestamp so it
+		-- can be shared.
+		p.updated = next(p.best) and NS.Now() or 0
+	end
+
 	db.stats = db.stats or NS.NewStats()
 	for key, default in pairs(NS.NewStats()) do
 		if type(db.stats[key]) ~= "number" then
 			db.stats[key] = default
 		end
 	end
+	db.guild = db.guild or {}   -- guild name -> player name -> record (Comm.lua)
 end
 
 function NS.GetSettings()
@@ -132,6 +179,7 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
 	elseif event == "PLAYER_LOGIN" then
 		NS.InitDB()
 		NS.Game:Start()
+		NS.Comm:Start()
 		NS.Options:Register()
 	end
 end)
