@@ -251,6 +251,12 @@ function UI:CreateLeft(f, top)
 	Tooltip(cookie, "The cookie", "Click it. A key can be bound to clicking under Options > Key Bindings > AddOns.")
 	p.Cookie = cookie
 
+	-- The "+cookies" texts live on a frame above the cookie button, else the
+	-- cookie would draw over them.
+	p.FloatLayer = CreateFrame("Frame", nil, p)
+	p.FloatLayer:SetAllPoints()
+	p.FloatLayer:SetFrameLevel(cookie:GetFrameLevel() + 2)
+
 	p.Buff = Label(p, "", "GameFontHighlight")
 	p.Buff:SetPoint("TOP", cookie, "BOTTOM", 0, -12)
 	p.Buff:SetJustifyH("CENTER")
@@ -909,11 +915,11 @@ function UI:OnClick(power)
 	end
 	local cx, cy = GetCursorPosition()
 	local x = NS.Clamp(cx / scale - left, 10, LEFT_W - 10)
-	local y = NS.Clamp(cy / scale - bottom, 10, PANEL_H - 10)
+	local y = NS.Clamp(cy / scale - bottom + 14, 10, PANEL_H - 10)
 	local fs = table.remove(self.floatPool)
 	if not fs then
-		fs = p:CreateFontString(nil, "OVERLAY")
-		fs:SetFont(FONT, 13, "OUTLINE")
+		fs = p.FloatLayer:CreateFontString(nil, "OVERLAY")
+		fs:SetFont(FONT, 14, "OUTLINE")
 	end
 	fs:SetText("+" .. NS.BeautifyRate(power, true))
 	fs:SetTextColor(1, 1, 1)
@@ -985,6 +991,7 @@ function UI:Refresh(force)
 	end
 
 	local right = self.right
+	local customArt = NS.GetSettings().customArt
 	if force or self.upgradeVersion ~= game.version or (GetTime() - (self.upgradeScan or 0)) > 2 then
 		self.upgradeVersion = game.version
 		self.upgradeScan = GetTime()
@@ -995,7 +1002,13 @@ function UI:Refresh(force)
 		local u = list[i]
 		slot.upgrade = u
 		if u then
-			slot.Icon:SetTexture(u.iconPath)
+			if customArt and u.kind == "building" then
+				slot.Icon:SetTexture(NS.Art("building_" .. u.building))
+				slot.Icon:SetTexCoord(0, 1, 0, 1)
+			else
+				slot.Icon:SetTexture(u.iconPath)
+				slot.Icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+			end
 			if cookies >= u.cost then
 				slot.Border:SetVertexColor(0.3, 0.9, 0.3, 1)
 				slot.Icon:SetDesaturated(false)
