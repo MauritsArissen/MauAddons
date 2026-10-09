@@ -24,7 +24,7 @@ The Guild button shows five boards: cookies baked over all runs, cookies baked t
 
 ## Art
 
-The addon reads its images from a `Textures` folder inside the addon: `cookie` (the big cookie, 512x512), `golden` (the golden cookie, 128x128) and `building_<id>` for the fourteen buildings (64x64), as PNG, TGA or BLP. That folder is **not part of this repository** and is not packed into the release zips: it is kept locally, because the images in use are the original Cookie Clicker's, which are copyrighted by their makers (Orteil / DashNet) and are only ever used privately. Without the folder the cookie and the store icons show as empty squares; put your own images there under those names. The client only picks up new files after a full restart, not after `/reload`.
+The addon reads its images from a `Textures` folder inside the addon: `cookie.tga` (the big cookie, 512x512), `golden.tga` (the golden cookie, 128x128) and `building_<id>.tga` for the fourteen buildings (64x64), uncompressed 32-bit TGA. That folder is **not part of this repository** and is not packed into the release zips: it is kept locally, because the images in use are the original Cookie Clicker's, which are copyrighted by their makers (Orteil / DashNet) and are only ever used privately. Without the folder the cookie and the store icons show as empty squares; put your own images there under those names. The client only picks up new files after a full restart, not after `/reload`.
 
 ## Options
 

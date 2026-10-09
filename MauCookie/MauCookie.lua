@@ -139,10 +139,11 @@ function NS.ClassColor(classFile)
 	return 0.8, 0.8, 0.8
 end
 
--- Path of an image in the addon's Textures folder (no extension: the client
--- finds .tga, .blp or .png).  The folder ships with the addon.
+-- Path of an image in the addon's Textures folder.  Without an extension
+-- the client looks for .blp and .tga only (a .png would have to be named
+-- in full), so the images are TGA.
 function NS.Art(key)
-	return NS.ART_ROOT .. key
+	return NS.ART_ROOT .. key .. ".tga"
 end
 
 -------------------------------------------------------------------------------
