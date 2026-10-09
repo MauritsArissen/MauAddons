@@ -20,6 +20,9 @@ NS.DEFAULTS = {
 	minQuality = 0,         -- Enum.ItemQuality; items below are taken without a spin
 	coinsInstant = true,    -- money is taken without a spin
 	speed = 100,            -- percent; lower is faster
+	staggerFirst = 0.2,     -- seconds between the first and the second reel
+	staggerStep = 0.1,      -- each further gap is this much longer than the previous one
+	maxColumns = 6,         -- reels per row before wrapping
 	sounds = true,
 	autoConfirmBind = true, -- confirm bind-on-pickup by ourselves when not in a group
 	scale = 100,            -- percent
@@ -27,6 +30,9 @@ NS.DEFAULTS = {
 
 NS.RANGES = {
 	speed = { 50, 200, 10 },
+	staggerFirst = { 0, 1, 0.05 },
+	staggerStep = { 0, 0.5, 0.05 },
+	maxColumns = { 1, 10, 1 },
 	scale = { 60, 150, 5 },
 }
 

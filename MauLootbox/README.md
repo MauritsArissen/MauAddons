@@ -2,7 +2,7 @@
 
 Every loot window becomes a lootbox, for **World of Warcraft: Forever** (the `_classic_beta_` client, version 1.60.x, interface `16001`).
 
-When you loot a corpse, a chest, a clam or anything else, Blizzard's loot window stays closed. Instead a small window with a single slot machine reel appears: icons scroll past, slow down and stop on the item you got, with a flash, the name in its quality colour and a sound. Then the item goes into your bags and the reel spins for the next one. Coins are taken straight away.
+When you loot a corpse, a chest, a clam or anything else, Blizzard's loot window stays closed. Instead a window with one slot machine reel per item appears, side by side: icons scroll past, slow down and stop on the item you got, with a flash, the name in its quality colour and a sound, and the item goes into your bags the moment its reel stops. The reels start one after the other with a growing delay, so they land in a cascade. Coins are taken straight away.
 
 ## How looting works with it
 
@@ -21,6 +21,7 @@ When you loot a corpse, a chest, a clam or anything else, Blizzard's loot window
 * Spin for items of at least a given quality; everything below is taken without a spin. The default is Poor, so everything spins.
 * Take coins without a spin.
 * Spin length, sounds, bind-on-pickup confirmation when solo.
+* Reels: the delay before the second reel starts, how much longer each further gap is (0.2 and 0.1 give gaps of 0.2, 0.3, 0.4 seconds), and how many reels sit in a row before wrapping.
 * Window size. Drag the window to move it; the position is remembered.
 
 `/mlb test` plays a demo with five made-up items of every quality without touching any real loot.

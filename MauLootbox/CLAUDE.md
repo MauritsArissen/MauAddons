@@ -17,7 +17,7 @@ Blizzard's loot window is kept from opening. On `LOOT_OPENED` the addon reads ev
 | `Options.lua` | `NS.Options`: Settings > AddOns category (same pattern as MauGuildMap's). |
 | `Test.lua` | `NS.Test`: `/mlb test` demo; sets `Loot.testMode` so real loot events are ignored meanwhile. |
 
-Settings (`MauLootboxDB.settings`, defaults in `NS.DEFAULTS`): `enabled` true, `minQuality` 0 (Enum.ItemQuality; dropdown values are numbers), `coinsInstant` true, `speed` 100 (percent of the spin and hold times, 50–200), `sounds` true, `autoConfirmBind` true, `scale` 100 (60–150).
+Settings (`MauLootboxDB.settings`, defaults in `NS.DEFAULTS`): `enabled` true, `minQuality` 0 (Enum.ItemQuality; dropdown values are numbers), `coinsInstant` true, `speed` 100 (percent of the spin and hold times, 50–200), `staggerFirst` 0.2 s (0–1), `staggerStep` 0.1 s (0–0.5), `maxColumns` 6 (1–10), `sounds` true, `autoConfirmBind` true, `scale` 100 (60–150).
 
 ## 3. Facts about the loot API on this client (verified in the `forever` branch)
 
@@ -37,12 +37,13 @@ Settings (`MauLootboxDB.settings`, defaults in `NS.DEFAULTS`): `enabled` true, `
 4. `LOOT_CLOSED` (walked away, closed, emptied): state idle, reel aborted.
 5. `Loot.testMode` (set by `Test.lua`) makes every handler a no-op so the demo cannot touch real loot.
 
-## 5. The reel (`Reel.lua`)
+## 5. The reels (`Reel.lua`)
 
-- Window: 220×320, BackdropTemplate with the dialog box art, movable (position saved in `MauLootboxDB.position`), scale from `settings.scale`, strata HIGH. A clipping `View` (`SetClipsChildren(true)`) 80×192 shows three rows of 64 px; five textures are reused for the rows on screen. Shades dim the top and bottom rows, `Border` (`Interface\Buttons\UI-ActionButton-Border`, ADD) frames the middle row and takes the quality colour on landing, `Flash` (white, ADD) fades out over 0.45 s.
-- Strip: 16–24 random icons from `FILLER_ICONS` (classic icon files that every client has) plus the icons of the current loot, with the real item last. `Render(position)` places strip index `base + k` at `-(k - frac) × 64` from the centre for k = −2..2, so the strip moves upward and ends with the real item centred.
-- Timing: `SPIN_TIME` / `HOLD_TIME` per quality (1.3 s / 0.7 s for Poor up to 4.2 s / 2.0 s for Legendary) times `speed / 100`; cubic ease-out (`EaseOutCubic`) so the reel decelerates. The loop sound starts with the spin and is stopped on landing; the landing sound depends on quality.
-- `FinishNow` fires `onLanded` for every item not yet landed (the current one too if still spinning) and then `onFinished`. `Abort` stops sounds and hides. `ShowLeftovers(entries, onTake)` reuses the window: buttons in the view, tooltip with the reason.
+- Window: BackdropTemplate with the dialog box art, movable (position saved in `MauLootboxDB.position`), scale from `settings.scale`, strata HIGH. Since 0.2.0 it holds **one column per item** (`CreateColumn`, pooled in `Reel.columns`), laid out by `Layout(count)` in a grid of `maxColumns` per row (100 px columns, 6 px gaps) and sized around it. Each column has its own clipping `View` (80×192, three rows of 64 px, five reused row textures), shades, `Border` (`Interface\Buttons\UI-ActionButton-Border`, ADD, quality colour on landing), `Flash` (white, ADD, fades over 0.45 s), `Name` and `Quantity`.
+- Stagger: column i starts at `StartDelay(i)` = Σ(k=2..i) (`staggerFirst` + (k−2) × `staggerStep`), so with the defaults 0.2 / 0.1 the gaps are 0.2, 0.3, 0.4 s… (user request 2026-10-09). One OnUpdate drives all columns: `waiting` → `StartColumn` when the clock reaches `startAt` → `spinning` → `LandColumn` → `holding` → `done`; `CheckFinished` fires `onFinished` once every column is done.
+- Strip per column: 16–24 random icons from `FILLER_ICONS` (classic icon files that every client has) plus the icons of the current loot, with the real item last. `RenderColumn(c, position)` places strip index `base + k` at `-(k - frac) × 64` from the centre for k = −2..2, so the strip moves upward and ends with the real item centred.
+- Timing: `SPIN_TIME` / `HOLD_TIME` per quality (1.3 s / 0.7 s for Poor up to 4.2 s / 2.0 s for Legendary) times `speed / 100`; cubic ease-out (`EaseOutCubic`) so the reel decelerates. The loop sound starts with the first column and stops when the last one lands; each landing plays its quality's sound.
+- `FinishNow` lands every waiting or spinning column at once (a column that never started just shows its item) and then `onFinished`. `Abort` stops sounds and hides. `ShowLeftovers(entries, onTake)` hides the columns and lists icon + name rows with click-to-take and a tooltip with the reason.
 
 ## 5b. Debugging (0.1.1)
 

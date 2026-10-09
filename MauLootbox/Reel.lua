@@ -1,10 +1,14 @@
 -- MauLootbox reel: the slot machine window.
 --
--- One column of item icons scrolls upward behind a window that shows three
--- rows, slows down and stops with the real item in the middle, then flashes,
--- shows the name and quality colour and hands control back (Loot.lua takes
--- the item at that moment).  Everything is plain frames and textures driven
--- by OnUpdate; nothing here talks to the loot API.
+-- One column per item, side by side (wrapping into rows after maxColumns).
+-- Each column is a strip of icons that scrolls upward behind a window
+-- showing three rows, slows down and stops with the real item in the middle,
+-- flashes, shows the name in its quality colour and reports the landing
+-- (Loot.lua takes the item at that moment).  Columns start one after the
+-- other: the second staggerFirst seconds after the first, the third
+-- staggerFirst + staggerStep after the second, and so on.  Everything is
+-- plain frames and textures driven by one OnUpdate; nothing here talks to
+-- the loot API.
 
 local _, NS = ...
 
@@ -14,6 +18,12 @@ NS.Reel = Reel
 local ICON = 56           -- icon size
 local ROW = 64            -- distance between rows
 local VISIBLE_ROWS = 3
+local COLUMN_WIDTH = 100
+local COLUMN_HEIGHT = ROW * VISIBLE_ROWS + 44   -- view plus name and quantity
+local COLUMN_GAP = 6
+local HEADER_HEIGHT = 56
+local FOOTER_HEIGHT = 52
+local SIDE_PADDING = 18
 local STRIP_MIN, STRIP_EXTRA = 16, 8   -- icons that pass by before the real one
 local FLASH_TIME = 0.45
 
@@ -83,62 +93,6 @@ function Reel:Create()
 	f.Counter = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 	f.Counter:SetPoint("TOP", f.Title, "BOTTOM", 0, -2)
 
-	-- The window the strip scrolls behind.
-	local view = CreateFrame("Frame", nil, f)
-	f.View = view
-	view:SetSize(ICON + 24, ROW * VISIBLE_ROWS)
-	view:SetPoint("TOP", f.Counter, "BOTTOM", 0, -8)
-	view:SetClipsChildren(true)
-
-	view.Background = view:CreateTexture(nil, "BACKGROUND")
-	view.Background:SetAllPoints()
-	view.Background:SetColorTexture(0, 0, 0, 0.6)
-
-	-- Icons for the rows that can be on screen at once (one spare above and below).
-	f.Rows = {}
-	for i = 1, VISIBLE_ROWS + 2 do
-		local tex = view:CreateTexture(nil, "ARTWORK")
-		tex:SetSize(ICON, ICON)
-		tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-		f.Rows[i] = tex
-	end
-
-	-- Dim the rows above and below the middle.
-	view.ShadeTop = view:CreateTexture(nil, "OVERLAY")
-	view.ShadeTop:SetPoint("TOPLEFT")
-	view.ShadeTop:SetPoint("TOPRIGHT")
-	view.ShadeTop:SetHeight(ROW)
-	view.ShadeTop:SetColorTexture(0, 0, 0, 0.55)
-	view.ShadeBottom = view:CreateTexture(nil, "OVERLAY")
-	view.ShadeBottom:SetPoint("BOTTOMLEFT")
-	view.ShadeBottom:SetPoint("BOTTOMRIGHT")
-	view.ShadeBottom:SetHeight(ROW)
-	view.ShadeBottom:SetColorTexture(0, 0, 0, 0.55)
-
-	-- Frame around the middle row, tinted with the item quality on landing.
-	f.Border = view:CreateTexture(nil, "OVERLAY", nil, 2)
-	f.Border:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
-	f.Border:SetBlendMode("ADD")
-	f.Border:SetSize(ICON * 1.72, ICON * 1.72)
-	f.Border:SetPoint("CENTER")
-	f.Border:SetVertexColor(1, 1, 1, 0.35)
-
-	-- White flash on landing.
-	f.Flash = view:CreateTexture(nil, "OVERLAY", nil, 3)
-	f.Flash:SetTexture("Interface\\Buttons\\WHITE8X8")
-	f.Flash:SetBlendMode("ADD")
-	f.Flash:SetSize(ICON, ICON)
-	f.Flash:SetPoint("CENTER")
-	f.Flash:SetAlpha(0)
-
-	f.Name = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	f.Name:SetPoint("TOP", view, "BOTTOM", 0, -8)
-	f.Name:SetWidth(190)
-	f.Name:SetWordWrap(false)
-
-	f.Quantity = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	f.Quantity:SetPoint("TOP", f.Name, "BOTTOM", 0, -2)
-
 	f.Skip = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
 	f.Skip:SetSize(90, 22)
 	f.Skip:SetPoint("BOTTOM", 0, 16)
@@ -161,6 +115,7 @@ function Reel:Create()
 		Reel:OnUpdate(elapsed)
 	end)
 
+	self.columns = {}
 	self:ApplyPosition()
 	self:ApplyScale()
 	return f
@@ -187,31 +142,157 @@ function Reel:ApplyScale()
 end
 
 -------------------------------------------------------------------------------
+-- Columns
+-------------------------------------------------------------------------------
+
+local function CreateColumn(parent)
+	local c = CreateFrame("Frame", nil, parent)
+	c:SetSize(COLUMN_WIDTH, COLUMN_HEIGHT)
+
+	-- The window the strip scrolls behind.
+	local view = CreateFrame("Frame", nil, c)
+	c.View = view
+	view:SetSize(ICON + 24, ROW * VISIBLE_ROWS)
+	view:SetPoint("TOP")
+	view:SetClipsChildren(true)
+
+	view.Background = view:CreateTexture(nil, "BACKGROUND")
+	view.Background:SetAllPoints()
+	view.Background:SetColorTexture(0, 0, 0, 0.6)
+
+	-- Icons for the rows that can be on screen at once (one spare above and below).
+	c.Rows = {}
+	for i = 1, VISIBLE_ROWS + 2 do
+		local tex = view:CreateTexture(nil, "ARTWORK")
+		tex:SetSize(ICON, ICON)
+		tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+		c.Rows[i] = tex
+	end
+
+	-- Dim the rows above and below the middle.
+	view.ShadeTop = view:CreateTexture(nil, "OVERLAY")
+	view.ShadeTop:SetPoint("TOPLEFT")
+	view.ShadeTop:SetPoint("TOPRIGHT")
+	view.ShadeTop:SetHeight(ROW)
+	view.ShadeTop:SetColorTexture(0, 0, 0, 0.55)
+	view.ShadeBottom = view:CreateTexture(nil, "OVERLAY")
+	view.ShadeBottom:SetPoint("BOTTOMLEFT")
+	view.ShadeBottom:SetPoint("BOTTOMRIGHT")
+	view.ShadeBottom:SetHeight(ROW)
+	view.ShadeBottom:SetColorTexture(0, 0, 0, 0.55)
+
+	-- Frame around the middle row, tinted with the item quality on landing.
+	c.Border = view:CreateTexture(nil, "OVERLAY", nil, 2)
+	c.Border:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
+	c.Border:SetBlendMode("ADD")
+	c.Border:SetSize(ICON * 1.72, ICON * 1.72)
+	c.Border:SetPoint("CENTER")
+	c.Border:SetVertexColor(1, 1, 1, 0.35)
+
+	-- White flash on landing.
+	c.Flash = view:CreateTexture(nil, "OVERLAY", nil, 3)
+	c.Flash:SetTexture("Interface\\Buttons\\WHITE8X8")
+	c.Flash:SetBlendMode("ADD")
+	c.Flash:SetSize(ICON, ICON)
+	c.Flash:SetPoint("CENTER")
+	c.Flash:SetAlpha(0)
+
+	c.Name = c:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	c.Name:SetPoint("TOP", view, "BOTTOM", 0, -6)
+	c.Name:SetWidth(COLUMN_WIDTH - 4)
+	c.Name:SetWordWrap(false)
+
+	c.Quantity = c:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	c.Quantity:SetPoint("TOP", c.Name, "BOTTOM", 0, -2)
+
+	return c
+end
+
+function Reel:GetColumn(index)
+	local c = self.columns[index]
+	if not c then
+		c = CreateColumn(self.frame)
+		self.columns[index] = c
+	end
+	return c
+end
+
+local function ResetColumn(c)
+	c.state = "waiting"
+	c.elapsed = 0
+	c.strip = nil
+	c.Name:SetText("")
+	c.Quantity:SetText("")
+	c.Border:SetVertexColor(1, 1, 1, 0.35)
+	c.Flash:SetAlpha(0)
+	for _, tex in ipairs(c.Rows) do
+		tex:Hide()
+	end
+end
+
+-- Place count columns in a grid and size the window around them.
+function Reel:Layout(count)
+	local f = self.frame
+	local perRow = math.max(1, math.min(count, NS.GetSettings().maxColumns or 6))
+	local rows = math.ceil(count / perRow)
+	local width = SIDE_PADDING * 2 + perRow * COLUMN_WIDTH + (perRow - 1) * COLUMN_GAP
+	local height = HEADER_HEIGHT + rows * COLUMN_HEIGHT + (rows - 1) * COLUMN_GAP + FOOTER_HEIGHT
+	f:SetSize(width, height)
+	for i = 1, count do
+		local c = self:GetColumn(i)
+		local col = (i - 1) % perRow
+		local row = math.floor((i - 1) / perRow)
+		c:ClearAllPoints()
+		c:SetPoint("TOPLEFT", f, "TOPLEFT", SIDE_PADDING + col * (COLUMN_WIDTH + COLUMN_GAP), -(HEADER_HEIGHT + row * (COLUMN_HEIGHT + COLUMN_GAP)))
+		c:Show()
+	end
+	for i = count + 1, #self.columns do
+		self.columns[i]:Hide()
+	end
+end
+
+-- Seconds after the first column at which column i starts.
+local function StartDelay(index, settings)
+	local first = settings.staggerFirst or 0.2
+	local step = settings.staggerStep or 0.1
+	local delay = 0
+	for k = 2, index do
+		delay = delay + first + (k - 2) * step
+	end
+	return delay
+end
+
+-------------------------------------------------------------------------------
 -- Showing and spinning
 -------------------------------------------------------------------------------
 
--- items: list of { texture, name, quantity, quality }; the reel runs through
--- them one by one.  onLanded(item) is called the moment an item lands,
--- onFinished() when the last hold is over.
+-- items: list of { texture, name, quantity, quality }.  onLanded(item) is
+-- called the moment a column lands, onFinished() when every column has
+-- landed and held.
 function Reel:Begin(items, callbacks)
 	local f = self:Create()
+	local settings = NS.GetSettings()
 	self.items = items
-	self.index = 0
 	self.callbacks = callbacks or {}
 	self.onSkip = self.callbacks.onSkip
 	self.onClose = self.callbacks.onClose
-	self.state = "idle"
+	self:HideLeftovers()
 	self:BuildPool(items)
-	f.Name:SetText("")
-	f.Quantity:SetText("")
-	f.Border:SetVertexColor(1, 1, 1, 0.35)
-	f.Flash:SetAlpha(0)
-	for _, tex in ipairs(f.Rows) do
-		tex:Hide()
+	self:Layout(#items)
+	for i, item in ipairs(items) do
+		local c = self:GetColumn(i)
+		ResetColumn(c)
+		c.item = item
+		c.startAt = StartDelay(i, settings)
 	end
+	self.active = #items
+	self.clock = 0
+	self.landed = 0
+	self.state = "running"
+	f.Counter:SetText(#items == 1 and "1 item" or (#items .. " items"))
 	self:ApplyScale()
 	f:Show()
-	self:Next()
+	self:OnUpdate(0)
 end
 
 function Reel:BuildPool(items)
@@ -227,22 +308,9 @@ function Reel:BuildPool(items)
 	self.pool = pool
 end
 
-function Reel:Next()
-	self.index = self.index + 1
-	local item = self.items[self.index]
-	if not item then
-		self.state = "idle"
-		if self.callbacks.onFinished then
-			self.callbacks.onFinished()
-		end
-		return
-	end
-	self:Spin(item)
-end
-
-function Reel:Spin(item)
-	local f = self.frame
+function Reel:StartColumn(c)
 	local settings = NS.GetSettings()
+	local item = c.item
 	local quality = item.quality or 1
 	local speed = (settings.speed or 100) / 100
 
@@ -253,45 +321,34 @@ function Reel:Spin(item)
 		strip[i] = self.pool[math.random(#self.pool)]
 	end
 	strip[length] = item.texture or FILLER_ICONS[#FILLER_ICONS]
-	self.strip = strip
-	self.current = item
-	self.duration = (SPIN_TIME[quality] or SPIN_TIME[1]) * speed
-	self.hold = (HOLD_TIME[quality] or HOLD_TIME[1]) * speed
-	self.elapsed = 0
-	self.state = "spinning"
-	self.lastRow = nil
+	c.strip = strip
+	c.duration = (SPIN_TIME[quality] or SPIN_TIME[1]) * speed
+	c.hold = (HOLD_TIME[quality] or HOLD_TIME[1]) * speed
+	c.elapsed = 0
+	c.state = "spinning"
 
-	f.Counter:SetText(string.format("%d of %d", self.index, #self.items))
-	f.Name:SetText("")
-	f.Quantity:SetText("")
-	f.Border:SetVertexColor(1, 1, 1, 0.35)
-	f.Flash:SetAlpha(0)
-
-	if self.loopHandle then
-		StopSound(self.loopHandle)
-		self.loopHandle = nil
+	if not self.loopHandle then
+		PlayKit("UI_BONUS_LOOT_ROLL_START")
+		self.loopHandle = PlayKit("UI_BONUS_LOOT_ROLL_LOOP")
 	end
-	PlayKit("UI_BONUS_LOOT_ROLL_START")
-	self.loopHandle = PlayKit("UI_BONUS_LOOT_ROLL_LOOP")
-	self:Render(0)
+	self:RenderColumn(c, 0)
 end
 
--- Draw the strip with its position (in rows) at the middle of the window.
-function Reel:Render(position)
-	local f = self.frame
-	local strip = self.strip
+-- Draw a column's strip with its position (in rows) at the middle of the window.
+function Reel:RenderColumn(c, position)
+	local strip = c.strip
 	local base = math.floor(position)
 	local frac = position - base
 	local rowIndex = 0
 	for k = -2, 2 do
 		rowIndex = rowIndex + 1
-		local tex = f.Rows[rowIndex]
+		local tex = c.Rows[rowIndex]
 		local stripIndex = base + k + 1
 		if stripIndex >= 1 and stripIndex <= #strip then
 			tex:SetTexture(strip[stripIndex])
 			tex:ClearAllPoints()
 			-- Items yet to come are below the middle; the strip moves up.
-			tex:SetPoint("CENTER", f.View, "CENTER", 0, -(k - frac) * ROW)
+			tex:SetPoint("CENTER", c.View, "CENTER", 0, -(k - frac) * ROW)
 			tex:Show()
 		else
 			tex:Hide()
@@ -299,23 +356,39 @@ function Reel:Render(position)
 	end
 end
 
-function Reel:Land()
-	local f = self.frame
-	local item = self.current
-	local r, g, b = NS.QualityColor(item.quality)
-	self:Render(#self.strip - 1)
-	f.Border:SetVertexColor(r, g, b, 1)
-	f.Flash:SetAlpha(0.9)
-	f.Name:SetText(item.name or "")
-	f.Name:SetTextColor(r, g, b)
-	if (item.quantity or 1) > 1 then
-		f.Quantity:SetText("x" .. item.quantity)
-	else
-		f.Quantity:SetText(NS.QualityName(item.quality))
-	end
+function Reel:StopLoop()
 	if self.loopHandle then
 		StopSound(self.loopHandle)
 		self.loopHandle = nil
+	end
+end
+
+function Reel:LandColumn(c)
+	local item = c.item
+	local r, g, b = NS.QualityColor(item.quality)
+	if c.strip then
+		self:RenderColumn(c, #c.strip - 1)
+	else
+		-- Never started (Take all pressed early): just show the item.
+		c.strip = { item.texture or FILLER_ICONS[#FILLER_ICONS] }
+		self:RenderColumn(c, 0)
+	end
+	c.Border:SetVertexColor(r, g, b, 1)
+	c.Flash:SetAlpha(0.9)
+	c.Name:SetText(item.name or "")
+	c.Name:SetTextColor(r, g, b)
+	if (item.quantity or 1) > 1 then
+		c.Quantity:SetText("x" .. item.quantity)
+	else
+		c.Quantity:SetText(NS.QualityName(item.quality))
+	end
+	c.state = "holding"
+	c.elapsed = 0
+	c.hold = c.hold or HOLD_TIME[item.quality or 1] or HOLD_TIME[1]
+
+	self.landed = self.landed + 1
+	if self.landed >= self.active then
+		self:StopLoop()
 	end
 	local quality = item.quality or 1
 	if quality >= 5 then
@@ -327,28 +400,48 @@ function Reel:Land()
 	else
 		PlayKit("IG_MAINMENU_OPTION_CHECKBOX_ON")
 	end
-	self.state = "holding"
-	self.elapsed = 0
 	if self.callbacks.onLanded then
 		self.callbacks.onLanded(item)
 	end
 end
 
-function Reel:OnUpdate(elapsed)
-	if self.state == "spinning" then
-		self.elapsed = self.elapsed + elapsed
-		local t = math.min(self.elapsed / self.duration, 1)
-		local position = EaseOutCubic(t) * (#self.strip - 1)
-		self:Render(position)
-		if t >= 1 then
-			self:Land()
+function Reel:CheckFinished()
+	for i = 1, self.active do
+		if self.columns[i].state ~= "done" then
+			return
 		end
-	elseif self.state == "holding" then
-		self.elapsed = self.elapsed + elapsed
-		local f = self.frame
-		f.Flash:SetAlpha(math.max(0, 0.9 * (1 - self.elapsed / FLASH_TIME)))
-		if self.elapsed >= self.hold then
-			self:Next()
+	end
+	self.state = "idle"
+	self:StopLoop()
+	if self.callbacks.onFinished then
+		self.callbacks.onFinished()
+	end
+end
+
+function Reel:OnUpdate(elapsed)
+	if self.state ~= "running" then
+		return
+	end
+	self.clock = self.clock + elapsed
+	for i = 1, self.active do
+		local c = self.columns[i]
+		if c.state == "waiting" and self.clock >= c.startAt then
+			self:StartColumn(c)
+		end
+		if c.state == "spinning" then
+			c.elapsed = c.elapsed + elapsed
+			local t = math.min(c.elapsed / c.duration, 1)
+			self:RenderColumn(c, EaseOutCubic(t) * (#c.strip - 1))
+			if t >= 1 then
+				self:LandColumn(c)
+			end
+		elseif c.state == "holding" then
+			c.elapsed = c.elapsed + elapsed
+			c.Flash:SetAlpha(math.max(0, 0.9 * (1 - c.elapsed / FLASH_TIME)))
+			if c.elapsed >= c.hold then
+				c.state = "done"
+				self:CheckFinished()
+			end
 		end
 	end
 end
@@ -357,35 +450,27 @@ end
 function Reel:Abort()
 	self.state = "idle"
 	self.items = nil
-	if self.loopHandle then
-		StopSound(self.loopHandle)
-		self.loopHandle = nil
-	end
+	self.active = 0
+	self:StopLoop()
 	if self.frame then
 		self.frame:Hide()
 	end
 end
 
--- Jump to the end: every remaining item counts as landed right now.
+-- Jump to the end: every column that has not landed lands right now.
 function Reel:FinishNow()
-	if not self.items then
+	if self.state ~= "running" then
 		return
 	end
-	if self.loopHandle then
-		StopSound(self.loopHandle)
-		self.loopHandle = nil
-	end
-	local from = self.index
-	if self.state == "holding" then
-		from = self.index + 1
-	end
-	for i = from, #self.items do
-		if self.callbacks.onLanded then
-			self.callbacks.onLanded(self.items[i])
+	for i = 1, self.active do
+		local c = self.columns[i]
+		if c.state == "waiting" or c.state == "spinning" then
+			self:LandColumn(c)
 		end
+		c.state = "done"
 	end
-	self.index = #self.items
 	self.state = "idle"
+	self:StopLoop()
 	if self.callbacks.onFinished then
 		self.callbacks.onFinished()
 	end
@@ -397,40 +482,46 @@ end
 
 function Reel:ShowLeftovers(entries, onTake)
 	local f = self:Create()
-	f.Counter:SetText("Still on the corpse")
-	f.Name:SetText("Click an item to take it")
-	f.Name:SetTextColor(0.8, 0.8, 0.8)
-	f.Quantity:SetText("")
-	for _, tex in ipairs(f.Rows) do
-		tex:Hide()
+	self.state = "idle"
+	for _, c in ipairs(self.columns) do
+		c:Hide()
 	end
-	f.Border:SetVertexColor(1, 1, 1, 0)
-	f.Flash:SetAlpha(0)
+	local size = ICON * 0.7
+	f:SetSize(SIDE_PADDING * 2 + 200, HEADER_HEIGHT + 20 + #entries * (size + 4) + FOOTER_HEIGHT)
+	f.Counter:SetText("Still on the corpse, click to take")
 
 	f.Leftovers = f.Leftovers or {}
-	for i, button in ipairs(f.Leftovers) do
+	for _, button in ipairs(f.Leftovers) do
 		button:Hide()
 	end
 	for i, entry in ipairs(entries) do
 		local button = f.Leftovers[i]
 		if not button then
-			button = CreateFrame("Button", nil, f.View)
-			button:SetSize(ICON * 0.7, ICON * 0.7)
+			button = CreateFrame("Button", nil, f)
+			button:SetSize(200, size)
 			button.Icon = button:CreateTexture(nil, "ARTWORK")
-			button.Icon:SetAllPoints()
+			button.Icon:SetSize(size, size)
+			button.Icon:SetPoint("LEFT")
 			button.Icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+			button.Text = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+			button.Text:SetPoint("LEFT", button.Icon, "RIGHT", 6, 0)
+			button.Text:SetPoint("RIGHT")
+			button.Text:SetJustifyH("LEFT")
+			button.Text:SetWordWrap(false)
 			button:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
 			f.Leftovers[i] = button
 		end
 		button:ClearAllPoints()
-		button:SetPoint("TOP", f.View, "TOP", 0, -6 - (i - 1) * (ICON * 0.7 + 4))
+		button:SetPoint("TOP", f, "TOP", 0, -(HEADER_HEIGHT + 10 + (i - 1) * (size + 4)))
 		button.Icon:SetTexture(entry.texture)
+		local r, g, b = NS.QualityColor(entry.quality)
+		button.Text:SetText(entry.name or "?")
+		button.Text:SetTextColor(r, g, b)
 		button:SetScript("OnClick", function()
 			onTake(entry)
 		end)
 		button:SetScript("OnEnter", function(self)
 			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-			local r, g, b = NS.QualityColor(entry.quality)
 			GameTooltip:AddLine(entry.name or "?", r, g, b)
 			GameTooltip:AddLine(entry.reason or "", 0.8, 0.8, 0.8)
 			GameTooltip:Show()

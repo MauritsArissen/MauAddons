@@ -16,6 +16,14 @@ local function Percent(value)
 	return string.format("%d%%", value + 0.5)
 end
 
+local function Seconds(value)
+	return string.format("%.2f s", value)
+end
+
+local function Count(value)
+	return string.format("%d", value + 0.5)
+end
+
 function Options:Register()
 	if self.category then
 		return
@@ -74,6 +82,11 @@ function Options:Register()
 	Slider("speed", "Spin length", "How long each spin takes. 100% is the normal length, lower is faster.", Percent)
 	Checkbox("sounds", "Sounds", "The whirr while spinning and the fanfare on landing.")
 	Checkbox("autoConfirmBind", "Confirm bind-on-pickup for me when solo", "When you are not in a group, bind-on-pickup items are confirmed automatically. In a group the normal dialog appears.")
+
+	Header(layout, "Reels")
+	Slider("staggerFirst", "Delay before the second reel", "How long after the first reel the second one starts.", Seconds)
+	Slider("staggerStep", "Extra delay for each further reel", "Each next reel waits this much longer than the previous gap: with 0.2 and 0.1 the gaps are 0.2, 0.3, 0.4 seconds and so on.", Seconds)
+	Slider("maxColumns", "Reels per row", "How many reels sit side by side before a new row starts.", Count)
 
 	Header(layout, "Window")
 	Slider("scale", "Window size", "Scale of the lootbox window. Drag the window to move it.", Percent)
