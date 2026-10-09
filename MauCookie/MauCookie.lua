@@ -20,7 +20,6 @@ NS.DEFAULTS = {
 	sounds = true,
 	popups = true,          -- "+1" texts on the cookie
 	shareScores = true,     -- guild board
-	customArt = false,      -- use the files in Textures\ (see README)
 	scale = 100,
 }
 
@@ -140,8 +139,8 @@ function NS.ClassColor(classFile)
 	return 0.8, 0.8, 0.8
 end
 
--- Path of a file in the addon's Textures folder (no extension: the client
--- finds .tga, .blp or .png), used when the custom art option is on.
+-- Path of an image in the addon's Textures folder (no extension: the client
+-- finds .tga, .blp or .png).  The folder ships with the addon.
 function NS.Art(key)
 	return NS.ART_ROOT .. key
 end

@@ -11,7 +11,7 @@ A Cookie Clicker homage built 2026-10-09 on the user's request. Click the cookie
 | File | Role |
 |---|---|
 | `MauCookie.toc` | Load order: MauCookie.lua, Data.lua, Game.lua, Comm.lua, UI.lua, Options.lua. |
-| `MauCookie.lua` | Namespace `NS` (`_G.MauCookie`), `NS.DEFAULTS` (`sounds`, `popups`, `shareScores`, `customArt`, `scale`), constants (`PRICE_GROWTH` 1.15, `PRESTIGE_BASE` 1e10, `ART_ROOT`), helpers (`Print`, `Guard`, `PlayKit`, `Clamp`, `Now`, `Commas`, `Beautify`, `BeautifyRate`, `FormatDuration`, `ShortName`, `ClassColor`, `Art`), `NewSave`, `InitDB`, events (`PLAYER_LOGIN` → `Game:Start`, `Comm:Start`), `/mck`, binding names, compartment function. |
+| `MauCookie.lua` | Namespace `NS` (`_G.MauCookie`), `NS.DEFAULTS` (`sounds`, `popups`, `shareScores`, `scale`), constants (`PRICE_GROWTH` 1.15, `PRESTIGE_BASE` 1e10, `ART_ROOT`), helpers (`Print`, `Guard`, `PlayKit`, `Clamp`, `Now`, `Commas`, `Beautify`, `BeautifyRate`, `FormatDuration`, `ShortName`, `ClassColor`, `Art`), `NewSave`, `InitDB`, events (`PLAYER_LOGIN` → `Game:Start`, `Comm:Start`), `/mck`, binding names, compartment function. |
 | `Data.lua` | `NS.BUILDINGS` (14), `NS.UPGRADES` (5 tiers × 14, 5 mice, 12 flavours, 2 luck), `NS.HEAVENLY` (5), `NS.ACHIEVEMENTS` (46: baked, cps, handmade, buildings, grandmas/cursors, golden, upgrades, ascensions) with lookup tables. |
 | `Game.lua` | `NS.Game`: `Start` (ticker), `Tick(dt)`, `Cps`, `BuildingCps`, `GlobalMult`, `ClickPower`, `Click`, `Price`/`PriceFor`/`Buy`, `IsRevealed`, upgrades, `Changed` (version bump, UI refresh, Comm), ascension (`PrestigeFor`, `AscendPreview`, `CookiesToNextChip`, `Ascend`, `BuyHeavenly`), golden cookies, buffs, `CheckAchievements`, `Wipe`. |
 | `Comm.lua` | `NS.Comm`: the guild board (section 5), `NS.BOARDS`. |
@@ -33,7 +33,7 @@ Save (`MauCookieDB.save`): `cookies`, `baked` (this run), `clicks`, `handmade`, 
 
 ## 4. Art
 
-`UI:ApplyArt` sets the cookie, golden cookie and store icons from the game (`C_Item.GetItemIconByID(17197)` with `INV_Misc_Food_19` fallback, classic icon files for buildings) or, with `customArt`, from `Interface\AddOns\MauCookie\Textures\<key>` (`cookie`, `golden`, `building_<id>`; no extension, the client resolves tga/blp/png; files are indexed at client start). The original game's art is copyrighted and must not be bundled; the option exists so the user can use art they are allowed to.
+`UI:ApplyArt` sets the cookie, golden cookie and store icons (and the building upgrades' icons in `Refresh`) from `Interface\AddOns\MauCookie\Textures\<key>` (`cookie` 512×512, `golden` 128×128, `building_<id>` 64×64; PNG, no extension in the path, files are indexed at client start). On the user's machine those files were cut from the original game's `perfectCookie.png`, `goldCookie.png` and `buildings.png` (sheet: column 0 is the plain icon, 64 px rows, row 0 Cursor, row 1 Grandma, row 2 grandma faces, rows 3–14 Farm to Prism) with System.Drawing in PowerShell on 2026-10-09, for private play with one friend. That art is copyrighted (Orteil / DashNet), so **the `Textures` folder is git-ignored and `build.ps1` does not pack it**: the repository and the zips never contain it, the user copies the folder by hand where it is wanted. Without the folder the cookie and the store icons are empty squares. Mice, flavours and luck upgrades still use classic icon files. The 0.2.0 "customArt" option and the item-icon fallback were removed in 0.2.2.
 
 ## 5. Guild board (`Comm.lua`)
 
@@ -51,4 +51,4 @@ Save (`MauCookieDB.save`): `cookies`, `baked` (this run), `clicks`, `handmade`, 
 5. Heaven: with under 1e10 all-time cookies it shows how many more are needed and Ascend is disabled; at 1e10 "+1 chip", two clicks ascend, the store is empty again, prestige 1 shows under the cookie and production is +1%; buy Heavenly cookies with 3 chips (after 2.7e11 all time) and see +10%.
 6. Stats: 17 lines including prestige, chips, ascensions, all runs. Wipe needs two clicks and zeroes everything.
 7. Guild board with another member: their bakery appears within a minute of their first purchase, tabs switch the ordering, tooltips show everything, online/offline marks. Wipe on one side: the other sees the zeroed snapshot after the next send.
-8. Custom art: put `cookie.tga` in `Textures\`, restart the client, tick the option: the cookie changes; untick: back to the game icon.
+8. Art: the big cookie, the golden cookie and the store icons are the Cookie Clicker images; an empty square means the client was started before the file existed (full restart) or the file is missing.

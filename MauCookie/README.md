@@ -22,19 +22,13 @@ Once the numbers get big, the Heaven button lets you ascend: cookies, buildings 
 
 The Guild button shows five boards: cookies baked over all runs, cookies baked this run, cookies per second, prestige level and achievements, with who is online. Every guild member who uses MauCookie sends a snapshot of their bakery over the guild addon channel (never guild chat) when something changes, at most once a minute; snapshots are kept in your saved variables and passed on, so people who are offline stay on the board. The newest snapshot always wins, which is what makes wiping or ascending safe: your new, smaller numbers simply replace the old ones everywhere. Sharing can be turned off in the options.
 
-## Your own art
+## Art
 
-The game's icons are used by default. If you have images you are allowed to use, put them in `Interface\AddOns\MauCookie\Textures\` and turn on "Use my own art" in the options:
-
-* `cookie.tga` - the big cookie (square, power-of-two size such as 256x256).
-* `golden.tga` - the golden cookie.
-* `building_cursor.tga`, `building_grandma.tga`, `building_farm.tga`, `building_mine.tga`, `building_factory.tga`, `building_bank.tga`, `building_temple.tga`, `building_wizard.tga`, `building_shipment.tga`, `building_alchemy.tga`, `building_portal.tga`, `building_timemachine.tga`, `building_antimatter.tga`, `building_prism.tga` - the store icons (64x64 works well).
-
-BLP and PNG work as well as TGA. The client only notices new files after a full restart, not after `/reload`, and a missing file shows as an empty square. The original Cookie Clicker's art is copyrighted by its makers and is not included; do not upload it with the addon.
+The addon reads its images from a `Textures` folder inside the addon: `cookie` (the big cookie, 512x512), `golden` (the golden cookie, 128x128) and `building_<id>` for the fourteen buildings (64x64), as PNG, TGA or BLP. That folder is **not part of this repository** and is not packed into the release zips: it is kept locally, because the images in use are the original Cookie Clicker's, which are copyrighted by their makers (Orteil / DashNet) and are only ever used privately. Without the folder the cookie and the store icons show as empty squares; put your own images there under those names. The client only picks up new files after a full restart, not after `/reload`.
 
 ## Options
 
-`/mck options` or Escape > Options > AddOns > MauCookie: sounds, click popups, window size, own art, guild sharing. The Stats page has the wipe button for starting over (two clicks). Key bindings for opening the bakery and for clicking the cookie are under Options > Key Bindings > AddOns, and the bakery is in the minimap's addon compartment. The save is account wide.
+`/mck options` or Escape > Options > AddOns > MauCookie: sounds, click popups, window size, guild sharing. The Stats page has the wipe button for starting over (two clicks). Key bindings for opening the bakery and for clicking the cookie are under Options > Key Bindings > AddOns, and the bakery is in the minimap's addon compartment. The save is account wide.
 
 ## Install
 
@@ -50,4 +44,5 @@ The folder that contains this README *is* the addon folder. The game has to see 
 * `UI.lua` - the window: cookie, store, upgrades, statistics, achievements, heaven, guild board, golden cookie.
 * `Options.lua` - the page in the game's Settings > AddOns panel.
 * `Bindings.xml` - the key bindings.
+* `Textures\` - the images (see Art).
 * `CLAUDE.md` - full technical documentation.

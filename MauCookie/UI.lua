@@ -18,7 +18,6 @@ local BOARD_ROWS = 16
 local WHITE = "Interface\\Buttons\\WHITE8X8"
 local MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 local FONT = STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
-local FALLBACK_COOKIE = "Interface\\Icons\\INV_Misc_Food_19"
 local REFRESH_INTERVAL = 0.1
 
 local function Label(parent, text, font)
@@ -85,14 +84,6 @@ local function RoundIcon(parent, layer)
 	mask:SetAllPoints(tex)
 	tex:AddMaskTexture(mask)
 	return tex
-end
-
-local function CookieIcon()
-	local icon
-	if C_Item and C_Item.GetItemIconByID then
-		icon = C_Item.GetItemIconByID(17197)   -- Gingerbread Cookie
-	end
-	return icon or FALLBACK_COOKIE
 end
 
 local function Ago(seconds)
@@ -173,34 +164,20 @@ function UI:Create()
 	return f
 end
 
--- Game icons, or the files in Textures\ when the option is on.
+-- The images in Textures\ (cookie, golden cookie, building icons).
 function UI:ApplyArt()
 	if not self.frame then
 		return
 	end
-	local custom = NS.GetSettings().customArt
 	local cookie = self.left.Cookie
-	if custom then
-		cookie.Icon:SetTexture(NS.Art("cookie"))
-		cookie.Icon:SetTexCoord(0, 1, 0, 1)
-		self.golden.Icon:SetTexture(NS.Art("golden"))
-		self.golden.Icon:SetTexCoord(0, 1, 0, 1)
-		self.golden.Icon:SetVertexColor(1, 1, 1)
-	else
-		cookie.Icon:SetTexture(CookieIcon())
-		cookie.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-		self.golden.Icon:SetTexture(CookieIcon())
-		self.golden.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-		self.golden.Icon:SetVertexColor(1, 0.9, 0.45)
-	end
+	cookie.Icon:SetTexture(NS.Art("cookie"))
+	cookie.Icon:SetTexCoord(0, 1, 0, 1)
+	self.golden.Icon:SetTexture(NS.Art("golden"))
+	self.golden.Icon:SetTexCoord(0, 1, 0, 1)
+	self.golden.Icon:SetVertexColor(1, 1, 1)
 	for _, row in ipairs(self.store.Rows) do
-		if custom then
-			row.Icon:SetTexture(NS.Art("building_" .. row.building.id))
-			row.Icon:SetTexCoord(0, 1, 0, 1)
-		else
-			row.Icon:SetTexture(row.building.iconPath)
-			row.Icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-		end
+		row.Icon:SetTexture(NS.Art("building_" .. row.building.id))
+		row.Icon:SetTexCoord(0, 1, 0, 1)
 	end
 end
 
@@ -991,7 +968,6 @@ function UI:Refresh(force)
 	end
 
 	local right = self.right
-	local customArt = NS.GetSettings().customArt
 	if force or self.upgradeVersion ~= game.version or (GetTime() - (self.upgradeScan or 0)) > 2 then
 		self.upgradeVersion = game.version
 		self.upgradeScan = GetTime()
@@ -1002,7 +978,7 @@ function UI:Refresh(force)
 		local u = list[i]
 		slot.upgrade = u
 		if u then
-			if customArt and u.kind == "building" then
+			if u.kind == "building" then
 				slot.Icon:SetTexture(NS.Art("building_" .. u.building))
 				slot.Icon:SetTexCoord(0, 1, 0, 1)
 			else

@@ -58,7 +58,6 @@ function Options:Register()
 
 	Header(layout, "Window")
 	Slider("scale", "Window size", "Scale of the bakery window. Drag the window to move it.", Percent)
-	Checkbox("customArt", "Use my own art from the Textures folder", "Reads cookie, golden and building_<id> image files (TGA, BLP or PNG) from Interface\\AddOns\\MauCookie\\Textures. New files need a full client restart. See the README for the names.")
 
 	Header(layout, "Guild")
 	Checkbox("shareScores", "Share my bakery with the guild", "A snapshot of your bakery (cookies baked, per second, prestige, buildings, achievements) goes to guild members who use MauCookie, and you keep and pass on theirs. Nothing goes to guild chat.")
@@ -69,8 +68,6 @@ end
 function Options:OnChanged(key)
 	if key == "scale" then
 		NS.UI:ApplyScale()
-	elseif key == "customArt" then
-		NS.UI:ApplyArt()
 	elseif key == "shareScores" then
 		if NS.GetSettings().shareScores then
 			NS.Comm:Announce()
