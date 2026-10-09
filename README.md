@@ -8,6 +8,7 @@ A collection of World of Warcraft addons by Maurits Arissen. Each addon lives in
 |---|---|---|
 | [MauUndercut](MauUndercut/) | Bulk auction posting with automatic lowest-price lookup and undercut, plus a full auction house scanner that lists every item's lowest price and highlights items listed below vendor price. | World of Warcraft: Forever (`_classic_beta_`, interface `16001`) |
 | [MauGuildMap](MauGuildMap/) | Shows guild members who run the addon on the world map: race icon, name and level on hover, dungeon-goers at the entrance. | World of Warcraft: Forever (`_classic_beta_`, interface `16001`) |
+| [MauLootbox](MauLootbox/) | Turns every loot window into a lootbox: a slot machine reel spins and lands on each item before it goes into your bags. | World of Warcraft: Forever (`_classic_beta_`, interface `16001`) |
 
 Each addon folder has its own `README.md` with usage, slash commands and known limits, and a `CLAUDE.md` with the full technical documentation.
 
