@@ -1,183 +1,319 @@
--- MauCookie window: the cookie on the left (on the blue background, with
--- the rotating shine, the milk and the wrinklers), the store in the middle
--- with buy/sell modes, the upgrades on the right, overlays for statistics,
--- achievements, heaven and the guild board, the golden or wrath cookie and
--- the cookie storm drops anywhere in the window, and the news ticker.
+-- MauCookie window, laid out like the original: the left section with the
+-- bakery name, the cookie counter band, the big cookie with its shine, the
+-- buffs, the wrinklers, the milk and the Santa / dragon tabs; the middle
+-- with the menu buttons, the news ticker and the building rows
+-- (UI_Rows.lua) or a menu (UI_Menus.lua); the right column with the
+-- upgrade crates and the building products (UI_Store.lua); the heavenly
+-- tree over everything while ascending (UI_Ascend.lua).  Golden cookies,
+-- reindeer and storm drops are buttons in a layer over the window.  All
+-- art comes from the local Textures folder (see CLAUDE.md).
 
 local _, NS = ...
 
 local UI = {}
 NS.UI = UI
 
-local PAD, TITLE_H = 16, 46
-local LEFT_W, STORE_W, RIGHT_W, GAP = 230, 300, 178, 10
-local PANEL_H = 560
-local COOKIE_SIZE = 170
-local ROW_H = 26
-local UPGRADE_SIZE, UPGRADE_GAP, UPGRADE_COLS = 36, 4, 4
-local MAX_UPGRADES = 40
-local BOARD_ROWS = 16
-local MILK_H = 50
-local WRINKLER_SLOTS = 12
-local MAX_DROPS = 24
-local TICKER_INTERVAL = 25
-local WHITE = "Interface\\Buttons\\WHITE8X8"
-local MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
-local FONT = STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
-local REFRESH_INTERVAL = 0.1
-local AMOUNTS = { 1, 10, 100 }
+UI.W, UI.H = 1000, 640
+UI.TOP = 22
+UI.LEFT_W = 300
+UI.RIGHT_W = 318
+UI.MID_X = 300
+UI.MID_W = UI.W - UI.LEFT_W - UI.RIGHT_W
+UI.CONTENT_H = UI.H - UI.TOP
+UI.FONT = "Fonts\\FRIZQT__.TTF"
+UI.TITLE_FONT = "Fonts\\MORPHEUS.TTF"
+UI.WHITE = "Interface\\Buttons\\WHITE8X8"
+UI.REFRESH_INTERVAL = 0.1
 
-local function Label(parent, text, font)
-	local fs = parent:CreateFontString(nil, "OVERLAY", font or "GameFontNormalSmall")
-	fs:SetText(text or "")
+local W, H, TOP, LEFT_W, RIGHT_W, MID_X, MID_W, CONTENT_H = UI.W, UI.H, UI.TOP, UI.LEFT_W, UI.RIGHT_W, UI.MID_X, UI.MID_W, UI.CONTENT_H
+local FONT, TITLE_FONT, WHITE = UI.FONT, UI.TITLE_FONT, UI.WHITE
+local COOKIE_SIZE = 256
+local MAX_FLOATS = 30
+local MAX_NOTES = 6
+
+-------------------------------------------------------------------------------
+-- Art helpers (NS.ART from Art.lua: { w, h, textureW, textureH[, cols, frames] })
+-------------------------------------------------------------------------------
+
+local ART = NS.ART or {}
+
+function NS.HasArt(key)
+	return ART[key] ~= nil
+end
+
+-- Whole image from a padded texture.
+function NS.SetArt(tex, key)
+	local a = ART[key]
+	tex:SetTexture(NS.Art(key))
+	if a then
+		tex:SetTexCoord(0, a[1] / a[3], 0, a[2] / a[4])
+	else
+		tex:SetTexCoord(0, 1, 0, 1)
+	end
+end
+
+-- A 48 px cell of the icon sheet (tiles of 21 x 21 cells).
+function NS.SetIcon(tex, cell)
+	local info = ART.icons
+	if not cell or not info then
+		tex:SetTexture(WHITE)
+		tex:SetVertexColor(0, 0, 0, 0)
+		return
+	end
+	tex:SetVertexColor(1, 1, 1, 1)
+	local per, size = info[3], info[4]
+	local c, r = cell[1], cell[2]
+	local tx, ty = math.floor(c / per), math.floor(r / per)
+	tex:SetTexture(NS.ART_ROOT .. "icons_" .. tx .. "_" .. ty .. ".tga")
+	local x = (c - tx * per) * size / 1024
+	local y = (r - ty * per) * size / 1024
+	tex:SetTexCoord(x, x + size / 1024, y, y + size / 1024)
+end
+
+-- Texture escape for tooltips: the icon sheet cell at the given size.
+function NS.IconString(cell, size)
+	local info = ART.icons
+	if not cell or not info then
+		return ""
+	end
+	size = size or 16
+	local per, cs = info[3], info[4]
+	local c, r = cell[1], cell[2]
+	local tx, ty = math.floor(c / per), math.floor(r / per)
+	local x = (c - tx * per) * cs
+	local y = (r - ty * per) * cs
+	return string.format("|T%sicons_%d_%d.tga:%d:%d:0:0:1024:1024:%d:%d:%d:%d|t", NS.ART_ROOT, tx, ty, size, size, x, x + cs, y, y + cs)
+end
+
+-- A 64 px cell of the buildings sheet (column 0 icon, 1 greyed, 2 and 3 for Business day).
+function NS.SetBuildingIcon(tex, column, row)
+	local a = ART.buildings
+	tex:SetTexture(NS.Art("buildings"))
+	if a then
+		tex:SetTexCoord(column * 64 / a[3], (column + 1) * 64 / a[3], row * 64 / a[4], (row + 1) * 64 / a[4])
+	end
+end
+
+-- Frame i (0-based) of a strip re-laid into a grid by the converter.
+function NS.SetFrame(tex, key, i)
+	local a = ART[key]
+	tex:SetTexture(NS.Art(key))
+	if a and a[5] then
+		local cols = a[5]
+		local fx, fy = i % cols, math.floor(i / cols)
+		tex:SetTexCoord(fx * a[1] / a[3], (fx + 1) * a[1] / a[3], fy * a[2] / a[4], (fy + 1) * a[2] / a[4])
+	end
+end
+
+-- A frame of a plain sheet (hearts, bunnies, familiars: 96 px cells).
+function NS.SetSheetCell(tex, key, cellW, cellH, col, row)
+	local a = ART[key]
+	tex:SetTexture(NS.Art(key))
+	if a then
+		tex:SetTexCoord(col * cellW / a[3], (col + 1) * cellW / a[3], row * cellH / a[4], (row + 1) * cellH / a[4])
+	end
+end
+
+-------------------------------------------------------------------------------
+-- Widget helpers
+-------------------------------------------------------------------------------
+
+function UI.Text(parent, size, flags, layer)
+	local fs = parent:CreateFontString(nil, layer or "OVERLAY")
+	fs:SetFont(FONT, size or 12, flags or "")
+	fs:SetShadowOffset(1, -1)
+	fs:SetShadowColor(0, 0, 0, 1)
 	fs:SetJustifyH("LEFT")
 	return fs
 end
 
-local function Button(parent, text, width, height, onClick)
-	local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+function UI.Tex(parent, layer, key)
+	local tex = parent:CreateTexture(nil, layer or "ARTWORK")
+	if key then
+		NS.SetArt(tex, key)
+	end
+	return tex
+end
+
+function UI.Solid(parent, layer, r, g, b, a)
+	local tex = parent:CreateTexture(nil, layer or "BACKGROUND")
+	tex:SetTexture(WHITE)
+	tex:SetVertexColor(r, g, b, a or 1)
+	return tex
+end
+
+-- The original's small framed button (dark noise, pale border).
+function UI.FancyButton(parent, text, width, height, onClick)
+	local b = CreateFrame("Button", nil, parent)
 	b:SetSize(width, height)
-	b:SetText(text)
+	b.Bg = UI.Solid(b, "BACKGROUND", 0.1, 0.08, 0.08, 0.95)
+	b.Bg:SetAllPoints()
+	b.Border = b:CreateTexture(nil, "BORDER")
+	b.Border:SetTexture(WHITE)
+	b.Border:SetVertexColor(0.85, 0.8, 0.55, 0.6)
+	b.Border:SetPoint("TOPLEFT", -1, 1)
+	b.Border:SetPoint("BOTTOMRIGHT", 1, -1)
+	b.Bg:SetDrawLayer("BORDER", 1)
+	b.Label = UI.Text(b, 12, "", "OVERLAY")
+	b.Label:SetPoint("CENTER")
+	b.Label:SetJustifyH("CENTER")
+	b.Label:SetText(text)
+	b.Label:SetTextColor(0.95, 0.9, 0.8)
+	b:SetHighlightTexture(WHITE)
+	b:GetHighlightTexture():SetVertexColor(1, 1, 1, 0.1)
 	b:SetScript("OnClick", onClick)
+	b.SetText = function(self, t)
+		self.Label:SetText(t)
+	end
+	b.SetEnabledLook = function(self, enabled)
+		self:SetEnabled(enabled)
+		self.Label:SetTextColor(enabled and 0.95 or 0.5, enabled and 0.9 or 0.5, enabled and 0.8 or 0.5)
+	end
 	return b
 end
 
-local function Tooltip(frame, title, body)
+function UI.SetTooltip(frame, builder)
 	frame:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-		GameTooltip:SetText(title)
-		if body then
-			GameTooltip:AddLine(body, 1, 1, 1, true)
+		local ok = NS.Guard("tooltip", builder, self)
+		if ok then
+			GameTooltip:Show()
+		else
+			GameTooltip:Hide()
 		end
-		GameTooltip:Show()
 	end)
 	frame:SetScript("OnLeave", function()
 		GameTooltip:Hide()
 	end)
 end
 
-local function SetSelected(button, selected)
-	if selected then
-		button:LockHighlight()
-		button:SetNormalFontObject(GameFontHighlight)
-	else
-		button:UnlockHighlight()
-		button:SetNormalFontObject(GameFontNormal)
-	end
-end
-
-local function Confirm(button, label, action)
-	if button.armed then
-		button.armed = nil
-		button:SetText(label)
-		action()
-		return
-	end
-	button.armed = true
-	button:SetText("Sure?")
-	C_Timer.After(4, function()
-		if button.armed then
-			button.armed = nil
-			button:SetText(label)
+-- A plain scroll frame with wheel scrolling and a thin bar.
+function UI.Scroll(parent, width, height)
+	local sf = CreateFrame("ScrollFrame", nil, parent)
+	sf:SetSize(width, height)
+	local child = CreateFrame("Frame", nil, sf)
+	child:SetSize(width, height)
+	sf:SetScrollChild(child)
+	sf.Child = child
+	sf.Bar = UI.Solid(sf, "OVERLAY", 1, 1, 1, 0.25)
+	sf.Bar:SetWidth(4)
+	sf.Bar:SetPoint("TOPRIGHT", -2, 0)
+	sf.Bar:SetHeight(20)
+	sf.Bar:Hide()
+	sf.UpdateBar = function(self)
+		local range = math.max(0, self.Child:GetHeight() - self:GetHeight())
+		if range <= 0 then
+			self.Bar:Hide()
+			self:SetVerticalScroll(0)
+			return
 		end
-	end)
-end
-
-local function RoundIcon(parent, layer)
-	local tex = parent:CreateTexture(nil, layer or "ARTWORK")
-	local mask = parent:CreateMaskTexture()
-	mask:SetTexture(MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-	mask:SetAllPoints(tex)
-	tex:AddMaskTexture(mask)
-	return tex
-end
-
-local function Tiled(parent, key, layer)
-	local tex = parent:CreateTexture(nil, layer or "BACKGROUND")
-	tex:SetAllPoints()
-	tex:SetTexture(NS.Art(key), "REPEAT", "REPEAT")
-	tex:SetHorizTile(true)
-	tex:SetVertTile(true)
-	return tex
-end
-
-local function SetCell(tex, cell)
-	local inset = NS.ICON_INSET
-	tex:SetTexture(NS.Icon(cell))
-	tex:SetTexCoord(inset, 1 - inset, inset, 1 - inset)
-end
-
-local function Ago(seconds)
-	if seconds < 60 then
-		return "just now"
-	elseif seconds < 3600 then
-		return string.format("%d min ago", math.floor(seconds / 60))
-	elseif seconds < 86400 then
-		return string.format("%d h ago", math.floor(seconds / 3600))
+		self.Bar:Show()
+		local frac = self:GetHeight() / self.Child:GetHeight()
+		local barH = math.max(20, frac * self:GetHeight())
+		self.Bar:SetHeight(barH)
+		local scroll = math.min(self:GetVerticalScroll(), range)
+		self:SetVerticalScroll(scroll)
+		self.Bar:ClearAllPoints()
+		self.Bar:SetPoint("TOPRIGHT", -2, -(scroll / range) * (self:GetHeight() - barH))
 	end
-	return string.format("%d days ago", math.floor(seconds / 86400))
+	sf:EnableMouseWheel(true)
+	sf:SetScript("OnMouseWheel", function(self, delta)
+		local range = math.max(0, self.Child:GetHeight() - self:GetHeight())
+		local scroll = NS.Clamp(self:GetVerticalScroll() - delta * 60, 0, range)
+		self:SetVerticalScroll(scroll)
+		self:UpdateBar()
+	end)
+	sf.SetContentHeight = function(self, h)
+		self.Child:SetHeight(math.max(h, 1))
+		self:UpdateBar()
+	end
+	return sf
 end
 
 -------------------------------------------------------------------------------
--- Window
+-- The window
 -------------------------------------------------------------------------------
 
 function UI:Create()
 	if self.frame then
 		return self.frame
 	end
-	local width = PAD + LEFT_W + GAP + STORE_W + GAP + RIGHT_W + PAD
-	local height = PAD + TITLE_H + PANEL_H + PAD
-	local f = CreateFrame("Frame", "MauCookieFrame", UIParent, "BackdropTemplate")
+	local f = CreateFrame("Frame", "MauCookieFrame", UIParent)
 	self.frame = f
-	f:SetSize(width, height)
+	f:SetSize(W, H)
 	f:SetFrameStrata("MEDIUM")
 	f:SetToplevel(true)
 	f:SetClampedToScreen(true)
 	f:SetMovable(true)
 	f:EnableMouse(true)
-	f:RegisterForDrag("LeftButton")
-	f:SetScript("OnDragStart", f.StartMoving)
-	f:SetScript("OnDragStop", function()
+	f:Hide()
+	f.Bg = UI.Solid(f, "BACKGROUND", 0, 0, 0, 1)
+	f.Bg:SetAllPoints()
+	f.Edge = f:CreateTexture(nil, "BORDER")
+	f.Edge:SetTexture(WHITE)
+	f.Edge:SetVertexColor(0.25, 0.22, 0.2, 1)
+	f.Edge:SetPoint("TOPLEFT", -1, 1)
+	f.Edge:SetPoint("BOTTOMRIGHT", 1, -1)
+	f.Bg:SetDrawLayer("BORDER", 1)
+
+	-- Title bar: drag handle, name, close.
+	local bar = CreateFrame("Frame", nil, f)
+	bar:SetPoint("TOPLEFT")
+	bar:SetPoint("TOPRIGHT")
+	bar:SetHeight(TOP)
+	bar:EnableMouse(true)
+	bar:RegisterForDrag("LeftButton")
+	bar:SetScript("OnDragStart", function()
+		f:StartMoving()
+	end)
+	bar:SetScript("OnDragStop", function()
 		f:StopMovingOrSizing()
 		local point, _, relativePoint, x, y = f:GetPoint()
 		MauCookieDB.position = { point = point, relativePoint = relativePoint, x = x, y = y }
 	end)
-	f:SetBackdrop({
-		bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
-		edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-		tile = true, tileSize = 32, edgeSize = 32,
-		insets = { left = 11, right = 11, top = 11, bottom = 11 },
-	})
-	f:Hide()
-
-	f.Title = Label(f, "MauCookie", "GameFontNormalLarge")
-	f.Title:SetPoint("TOP", 0, -14)
-	f.Title:SetJustifyH("CENTER")
-	f.Close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
-	f.Close:SetPoint("TOPRIGHT", -4, -4)
-	f.Close:SetScript("OnClick", function()
+	bar.Bg = UI.Tex(bar, "BACKGROUND", "darkNoiseTopBar")
+	bar.Bg:SetAllPoints()
+	bar.Bg:SetHorizTile(true)
+	bar.Bg:SetTexture(NS.Art("darkNoiseTopBar"), "REPEAT", "CLAMP")
+	bar.Bg:SetTexCoord(0, W / 512, 0, TOP / 64)
+	bar.Title = UI.Text(bar, 12, "")
+	bar.Title:SetPoint("LEFT", 8, 0)
+	bar.Title:SetText("MauCookie")
+	bar.Title:SetTextColor(0.8, 0.75, 0.65)
+	bar.Hint = UI.Text(bar, 10, "")
+	bar.Hint:SetPoint("LEFT", bar.Title, "RIGHT", 10, 0)
+	bar.Hint:SetTextColor(0.5, 0.5, 0.5)
+	bar.Hint:SetText("drag here to move, /mck options for settings")
+	bar.Close = CreateFrame("Button", nil, bar)
+	bar.Close:SetSize(TOP, TOP)
+	bar.Close:SetPoint("RIGHT")
+	bar.Close.Label = UI.Text(bar.Close, 14, "")
+	bar.Close.Label:SetPoint("CENTER")
+	bar.Close.Label:SetText("x")
+	bar.Close:SetHighlightTexture(WHITE)
+	bar.Close:GetHighlightTexture():SetVertexColor(1, 1, 1, 0.15)
+	bar.Close:SetScript("OnClick", function()
 		f:Hide()
 	end)
-	f.Ticker = Label(f, "", "GameFontHighlightSmall")
-	f.Ticker:SetPoint("TOP", 0, -32)
-	f.Ticker:SetWidth(width - 80)
-	f.Ticker:SetJustifyH("CENTER")
-	f.Ticker:SetTextColor(0.85, 0.85, 0.9)
-	self.tickerT = TICKER_INTERVAL
+	self.bar = bar
 
-	local top = -(PAD + TITLE_H)
-	self:CreateLeft(f, top)
-	self:CreateStore(f, top)
-	self:CreateRight(f, top)
-	self:CreateOverlays(f, top)
-	self:CreateGolden(f)
-	self:CreateDrops(f)
-	self:ApplyArt()
+	self:CreateLeft(f)
+	self:CreateMiddle(f)
+	self:CreateStore(f)
+	self:CreateMenus(f)
+	self:CreateShimmerLayer(f)
+	-- Floating texts over the whole window.
+	local floats = CreateFrame("Frame", nil, f)
+	floats:SetPoint("TOPLEFT", 0, -TOP)
+	floats:SetPoint("BOTTOMRIGHT")
+	floats:SetFrameLevel(f:GetFrameLevel() + 45)
+	self.floatLayer = floats
+	self:CreateNotes(f)
+	self:CreatePrompt(f)
+	self:CreateAscend(f)
 
 	f:SetScript("OnShow", function()
-		UI:Refresh(true)
-		UI:RefreshWrinklers()
+		UI:OnShow()
 	end)
 	f:SetScript("OnHide", function()
 		GameTooltip:Hide()
@@ -194,149 +330,254 @@ function UI:Create()
 	return f
 end
 
-function UI:ApplyArt()
-	if not self.frame then
-		return
+function UI:OnShow()
+	self:RefreshBackground()
+	self:Refresh(true)
+	self:RefreshWrinklers()
+	self:SyncShimmers()
+	self:OnAscendChanged()
+	if NS.Game.ticker == "" then
+		NS.Game:NewTicker(true)
 	end
-	local cookie = self.left.Cookie
-	cookie.Icon:SetTexture(NS.Art("cookie"))
-	cookie.Icon:SetTexCoord(0, 1, 0, 1)
-	for _, row in ipairs(self.store.Rows) do
-		row.iconKey = nil
-	end
+	self:OnTicker()
 end
 
 -------------------------------------------------------------------------------
--- Left: the cookie, the wrinklers
+-- Left section
 -------------------------------------------------------------------------------
 
-function UI:CreateLeft(f, top)
+function UI:CreateLeft(f)
 	local p = CreateFrame("Frame", nil, f)
-	p:SetSize(LEFT_W, PANEL_H)
-	p:SetPoint("TOPLEFT", PAD, top)
+	p:SetSize(LEFT_W, CONTENT_H)
+	p:SetPoint("TOPLEFT", 0, -TOP)
+	p:SetClipsChildren(true)
 	self.left = p
-	p.Bg = Tiled(p, "bgBlue", "BACKGROUND")
 
-	p.Count = Label(p, "", "GameFontNormalLarge")
-	p.Count:SetPoint("TOP", 0, -6)
-	p.Count:SetJustifyH("CENTER")
-	p.Count:SetWidth(LEFT_W)
-	p.Cps = Label(p, "", "GameFontHighlightSmall")
-	p.Cps:SetPoint("TOP", 0, -28)
-	p.Cps:SetJustifyH("CENTER")
-	p.Cps:SetWidth(LEFT_W)
+	p.Bg = p:CreateTexture(nil, "BACKGROUND")
+	p.Bg:SetAllPoints()
+	p.Bg:SetTexture(NS.Art("bgBlue"), "REPEAT", "REPEAT")
+	p.Bg:SetHorizTile(true)
+	p.Bg:SetVertTile(true)
+	p.Bg:SetTexCoord(0, LEFT_W / 512, 0, CONTENT_H / 512)
+	p.bgKey = "bgBlue"
 
+	-- Milk, under everything else but above the background.
+	p.Milk = p:CreateTexture(nil, "BORDER")
+	p.Milk:SetTexture(NS.Art("milkPlain"), "REPEAT", "REPEAT")
+	p.Milk:SetHorizTile(true)
+	p.Milk:SetVertTile(true)
+	p.Milk:SetPoint("BOTTOMLEFT")
+	p.Milk:SetPoint("BOTTOMRIGHT")
+	p.Milk:SetHeight(1)
+	p.Milk:SetAlpha(0.9)
+	p.milkKey = "milkPlain"
+	p.milkOffset = 0
+	p.milkHd = 0
+
+	-- Bakery name.
+	p.Name = p:CreateFontString(nil, "OVERLAY")
+	p.Name:SetFont(TITLE_FONT, 20, "")
+	p.Name:SetShadowOffset(1, -1)
+	p.Name:SetPoint("TOP", 0, -14)
+	p.Name:SetWidth(LEFT_W - 16)
+	p.Name:SetJustifyH("CENTER")
+	p.Name:SetText((NS.ShortName(UnitName("player")) or "Your") .. "'s bakery")
+
+	-- The cookie counter band at 10%.
+	local band = CreateFrame("Frame", nil, p)
+	band:SetPoint("TOPLEFT", 0, -math.floor(CONTENT_H * 0.1))
+	band:SetPoint("TOPRIGHT", 0, -math.floor(CONTENT_H * 0.1))
+	band:SetHeight(58)
+	band.Bg = UI.Solid(band, "BACKGROUND", 0, 0, 0, 0.4)
+	band.Bg:SetAllPoints()
+	band.Count = band:CreateFontString(nil, "OVERLAY")
+	band.Count:SetFont(FONT, 22, "OUTLINE")
+	band.Count:SetPoint("TOP", 0, -6)
+	band.Count:SetWidth(LEFT_W - 8)
+	band.Count:SetJustifyH("CENTER")
+	band.Cps = band:CreateFontString(nil, "OVERLAY")
+	band.Cps:SetFont(FONT, 12, "OUTLINE")
+	band.Cps:SetPoint("TOP", band.Count, "BOTTOM", 0, -4)
+	band.Cps:SetWidth(LEFT_W - 8)
+	band.Cps:SetJustifyH("CENTER")
+	p.Band = band
+
+	-- The big cookie at 40%.
+	local cookieY = math.floor(CONTENT_H * 0.4)
 	local cookie = CreateFrame("Button", nil, p)
 	cookie:SetSize(COOKIE_SIZE, COOKIE_SIZE)
-	cookie:SetPoint("TOP", 0, -62)
-	cookie.Shine = cookie:CreateTexture(nil, "BACKGROUND")
-	cookie.Shine:SetTexture(NS.Art("shine"))
+	cookie:SetPoint("CENTER", p, "TOPLEFT", LEFT_W / 2, -cookieY)
+	cookie:SetFrameLevel(p:GetFrameLevel() + 3)
+	cookie.Shine = p:CreateTexture(nil, "ARTWORK", nil, -1)
+	NS.SetArt(cookie.Shine, "shine")
 	cookie.Shine:SetBlendMode("ADD")
-	cookie.Shine:SetAlpha(0.55)
-	cookie.Shine:SetPoint("CENTER")
-	cookie.Shine:SetSize(COOKIE_SIZE * 1.9, COOKIE_SIZE * 1.9)
-	cookie.Icon = RoundIcon(cookie, "ARTWORK")
+	cookie.Shine:SetAlpha(0.6)
+	cookie.Shine:SetPoint("CENTER", cookie, "CENTER")
+	cookie.Shine:SetSize(300, 300)
+	cookie.Shine2 = p:CreateTexture(nil, "ARTWORK", nil, -1)
+	NS.SetArt(cookie.Shine2, "shine")
+	cookie.Shine2:SetBlendMode("ADD")
+	cookie.Shine2:SetAlpha(0.4)
+	cookie.Shine2:SetPoint("CENTER", cookie, "CENTER")
+	cookie.Shine2:SetSize(300, 300)
+	cookie.Shadow = p:CreateTexture(nil, "ARTWORK", nil, 0)
+	NS.SetArt(cookie.Shadow, "cookieShadow")
+	cookie.Shadow:SetPoint("CENTER", cookie, "CENTER", 0, -12)
+	cookie.Shadow:SetSize(COOKIE_SIZE * 1.15, COOKIE_SIZE * 1.15)
+	cookie.Shadow:SetAlpha(0.5)
+	cookie.Icon = cookie:CreateTexture(nil, "ARTWORK")
+	NS.SetArt(cookie.Icon, "cookie")
 	cookie.Icon:SetAllPoints()
-	cookie.Highlight = RoundIcon(cookie, "HIGHLIGHT")
-	cookie.Highlight:SetTexture(WHITE)
-	cookie.Highlight:SetAllPoints()
-	cookie.Highlight:SetVertexColor(1, 1, 1, 0.1)
 	cookie:RegisterForClicks("LeftButtonDown")
 	cookie:SetScript("OnClick", function()
-		NS.Game:Click()
+		NS.Game:ClickCookie()
 	end)
 	cookie:SetScript("OnMouseDown", function(self)
-		self:SetSize(COOKIE_SIZE - 10, COOKIE_SIZE - 10)
+		self.pressed = true
 	end)
 	cookie:SetScript("OnMouseUp", function(self)
-		self:SetSize(COOKIE_SIZE, COOKIE_SIZE)
+		self.pressed = nil
 	end)
-	Tooltip(cookie, "The cookie", "Click it. A key can be bound to clicking under Options > Key Bindings > AddOns.")
+	cookie:SetScript("OnEnter", function(self)
+		self.hover = true
+	end)
+	cookie:SetScript("OnLeave", function(self)
+		self.hover = nil
+	end)
+	cookie.size = 1
 	p.Cookie = cookie
+	p.cookieY = cookieY
 
+	-- Floating +amount texts and wrinklers above the cookie.
 	p.FloatLayer = CreateFrame("Frame", nil, p)
 	p.FloatLayer:SetAllPoints()
 	p.FloatLayer:SetFrameLevel(cookie:GetFrameLevel() + 2)
+	self.floats, self.floatPool = {}, {}
 
-	-- Wrinklers in an arc under the cookie, heads towards it.
+	-- Wrinklers: fourteen square buttons rotated towards the cookie.
+	p.WrinklerLayer = CreateFrame("Frame", nil, p)
+	p.WrinklerLayer:SetAllPoints()
+	p.WrinklerLayer:SetFrameLevel(cookie:GetFrameLevel() + 1)
 	p.Wrinklers = {}
-	local radius = COOKIE_SIZE / 2 + 24
-	for slot = 1, WRINKLER_SLOTS do
-		local w = CreateFrame("Button", nil, p.FloatLayer)
-		w:SetSize(30, 60)
-		local angle = math.rad(200 + (slot - 1) * (140 / (WRINKLER_SLOTS - 1)))
-		w:SetPoint("CENTER", cookie, "CENTER", math.cos(angle) * radius, math.sin(angle) * radius)
+	for i = 1, 14 do
+		local w = CreateFrame("Button", nil, p.WrinklerLayer)
+		w:SetSize(230, 230)
 		w.Icon = w:CreateTexture(nil, "ARTWORK")
 		w.Icon:SetAllPoints()
-		w.Icon:SetTexture(NS.Art("wrinkler"))
-		w.Icon:SetTexCoord(14 / 128, 114 / 128, 28 / 256, 228 / 256)
-		w:SetHighlightTexture(WHITE)
-		w:GetHighlightTexture():SetVertexColor(1, 1, 1, 0.15)
+		NS.SetArt(w.Icon, "wrinkler")
 		w:RegisterForClicks("LeftButtonDown")
 		w:SetScript("OnClick", function(self)
-			if self.index then
-				NS.Game:ClickWrinkler(self.index)
+			if self.data then
+				NS.Game:ClickWrinkler(self.data)
 			end
 		end)
-		w:SetScript("OnEnter", function(self)
-			local data = self.index and NS.Game:Wrinklers()[self.index]
-			if not data then
+		UI.SetTooltip(w, function(self)
+			local me = self.data
+			if not me then
 				return
 			end
-			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-			GameTooltip:SetText(data.shiny and "Shiny wrinkler" or "Wrinkler")
-			GameTooltip:AddLine(string.format("Has eaten %s cookies. Click it %d more time%s to burst it and get them back with interest.", NS.Beautify(data.sucked), data.hp, data.hp == 1 and "" or "s"), 1, 1, 1, true)
-			GameTooltip:Show()
-		end)
-		w:SetScript("OnLeave", function()
-			GameTooltip:Hide()
+			GameTooltip:SetText(me.type == 1 and "Shiny wrinkler" or "Wrinkler")
+			if NS.Game:Has("Eye of the wrinkler") then
+				GameTooltip:AddLine("Swallowed: " .. NS.Beautify(me.sucked) .. " cookies", 1, 1, 1)
+			end
+			GameTooltip:AddLine("Click it a few times to burst it and get the cookies it ate back, with interest.", 0.7, 0.7, 0.7, true)
 		end)
 		w:Hide()
-		p.Wrinklers[slot] = w
+		p.Wrinklers[i] = w
 	end
 
-	p.Buff = Label(p, "", "GameFontHighlightSmall")
-	p.Buff:SetPoint("TOP", cookie, "BOTTOM", 0, -58)
-	p.Buff:SetJustifyH("CENTER")
-	p.Buff:SetWidth(LEFT_W)
-	p.Buff:SetWordWrap(true)
-	p.Buff:SetTextColor(1, 0.85, 0.3)
+	-- Buffs at the top right, 36 px crates with pie timers.
+	p.Buffs = {}
+	for i = 1, 12 do
+		local b = CreateFrame("Frame", nil, p)
+		b:SetSize(36, 36)
+		b:SetPoint("TOPRIGHT", -10, -40 - (i - 1) * 42)
+		b.Frame = b:CreateTexture(nil, "BORDER")
+		b.Frame:SetPoint("TOPLEFT", -4, 4)
+		b.Frame:SetPoint("BOTTOMRIGHT", 4, -4)
+		NS.SetSheetCell(b.Frame, "upgradeFrame", 60, 60, 0, 0)
+		b.Icon = b:CreateTexture(nil, "ARTWORK")
+		b.Icon:SetAllPoints()
+		b.Pie = b:CreateTexture(nil, "OVERLAY")
+		b.Pie:SetAllPoints()
+		b.Pie:SetAlpha(0.5)
+		b:EnableMouse(true)
+		UI.SetTooltip(b, function(self)
+			if self.buff then
+				GameTooltip:SetText(self.buff.name)
+				GameTooltip:AddLine(self.buff.desc, 1, 1, 1, true)
+				GameTooltip:AddLine(NS.FormatDuration(self.buff.time) .. " left", 0.7, 0.7, 0.7)
+			end
+		end)
+		b:Hide()
+		p.Buffs[i] = b
+	end
 
-	p.Milk = p:CreateTexture(nil, "BORDER")
-	p.Milk:SetTexture(NS.Art("milk"), "REPEAT", "REPEAT")
-	p.Milk:SetHorizTile(true)
-	p.Milk:SetPoint("BOTTOMLEFT")
-	p.Milk:SetPoint("BOTTOMRIGHT")
-	p.Milk:SetHeight(MILK_H)
-	p.Milk:SetAlpha(0.9)
-	p.milkOffset = 0
-
-	p.Banner = p:CreateFontString(nil, "OVERLAY")
-	p.Banner:SetFont(FONT, 15, "OUTLINE")
-	p.Banner:SetPoint("BOTTOM", 0, MILK_H + 60)
-	p.Banner:SetWidth(LEFT_W)
-	p.Banner:SetJustifyH("CENTER")
-	p.Banner:SetWordWrap(true)
-	p.Banner:Hide()
-
-	p.Prestige = Label(p, "", "GameFontHighlightSmall")
-	p.Prestige:SetPoint("BOTTOM", 0, MILK_H + 34)
+	-- Prestige line under the band.
+	p.Prestige = UI.Text(p, 11, "OUTLINE")
+	p.Prestige:SetPoint("TOP", band, "BOTTOM", 0, -2)
+	p.Prestige:SetWidth(LEFT_W - 8)
 	p.Prestige:SetJustifyH("CENTER")
-	p.Prestige:SetWidth(LEFT_W)
-	p.Baked = Label(p, "", "GameFontHighlightSmall")
-	p.Baked:SetPoint("BOTTOM", 0, MILK_H + 20)
-	p.Baked:SetJustifyH("CENTER")
-	p.Baked:SetWidth(LEFT_W)
-	p.Hint = Label(p, "", "GameFontHighlightSmall")
-	p.Hint:SetPoint("BOTTOM", 0, MILK_H + 6)
-	p.Hint:SetJustifyH("CENTER")
-	p.Hint:SetWidth(LEFT_W)
-	for _, fs in ipairs({ p.Prestige, p.Baked, p.Hint }) do
-		fs:SetTextColor(0.8, 0.85, 1)
-	end
+	p.Prestige:SetTextColor(0.8, 0.85, 1)
 
-	self.floats, self.floatPool = {}, {}
-	self.banners = {}
+	-- Santa / dragon tabs at the bottom left.
+	p.Tabs = {}
+	for i = 1, 2 do
+		local t = CreateFrame("Button", nil, p)
+		t:SetSize(48, 48)
+		t.Icon = t:CreateTexture(nil, "ARTWORK")
+		t.Icon:SetAllPoints()
+		t:SetHighlightTexture(WHITE)
+		t:GetHighlightTexture():SetVertexColor(1, 1, 1, 0.1)
+		t:SetScript("OnClick", function(self)
+			UI:ToggleSpecial(self.kind)
+		end)
+		UI.SetTooltip(t, function(self)
+			GameTooltip:SetText(self.kind == "santa" and NS.Game:SantaName() or (NS.Game:DragonLevelInfo() or {}).name or "Dragon")
+			GameTooltip:AddLine("Click to open.", 0.7, 0.7, 0.7)
+		end)
+		t:Hide()
+		p.Tabs[i] = t
+	end
+	self:CreateSpecialPanel(p)
+end
+
+function UI:RefreshBackground()
+	local p = self.left
+	local S = NS.Game.save
+	local key = "bgBlue"
+	local bg = NS.BGS[(S.bgType or 0) + 1]
+	if S.bgType and S.bgType > 0 and bg then
+		key = bg.pic
+	else
+		if (S.elderWrath or 0) > 0 then
+			key = "grandmas" .. math.min(3, S.elderWrath)
+		elseif S.season == "christmas" then
+			key = "bgSnowy"
+		elseif S.season == "fools" then
+			key = "bgMoney"
+		end
+	end
+	if not NS.HasArt(key) then
+		key = "bgBlue"
+	end
+	if p.bgKey ~= key then
+		p.bgKey = key
+		p.Bg:SetTexture(NS.Art(key), "REPEAT", "REPEAT")
+		p.Bg:SetTexCoord(0, LEFT_W / 512, 0, CONTENT_H / 512)
+	end
+	local milk = NS.Game.milk or NS.MILK_RANKS[1]
+	if (S.milkType or 0) > 0 and NS.MILKS[S.milkType + 1] then
+		milk = NS.MILKS[S.milkType + 1]
+	end
+	local mkey = milk and milk.pic or "milkPlain"
+	if not NS.HasArt(mkey) then
+		mkey = "milkPlain"
+	end
+	if p.milkKey ~= mkey then
+		p.milkKey = mkey
+		p.Milk:SetTexture(NS.Art(mkey), "REPEAT", "REPEAT")
+	end
 end
 
 function UI:RefreshWrinklers()
@@ -344,755 +585,434 @@ function UI:RefreshWrinklers()
 	if not p then
 		return
 	end
-	for _, w in ipairs(p.Wrinklers) do
-		w.index = nil
-		w:Hide()
-	end
-	for index, data in ipairs(NS.Game:Wrinklers()) do
-		local w = p.Wrinklers[data.slot]
-		if w then
-			w.index = index
-			w.Icon:SetTexture(NS.Art(data.shiny and "wrinklershiny" or "wrinkler"))
+	local game = NS.Game
+	local max = game:GetWrinklersMax()
+	for i, w in ipairs(p.Wrinklers) do
+		local me = game:Wrinklers()[i]
+		if me and me.phase > 0 then
+			w.data = me
+			local key = me.type == 1 and "wrinklershiny" or (game.save.season == "christmas" and "wrinklerwinter" or "wrinkler")
+			if w.key ~= key then
+				w.key = key
+				NS.SetArt(w.Icon, key)
+			end
 			w:Show()
+		else
+			w.data = nil
+			w:Hide()
+		end
+	end
+	p.wrinklerMax = max
+end
+
+-- Positions follow the original: r = id / max * 360, distance 128 * (2 - close).
+function UI:UpdateWrinklers(t)
+	local p = self.left
+	local max = p.wrinklerMax or 10
+	for i, w in ipairs(p.Wrinklers) do
+		local me = w.data
+		if me and w:IsShown() then
+			local d = 128 * (2 - me.close) + math.cos(t * 1.5 + me.id) * 4
+			local r = (me.id / max) * 360 + math.sin(t * 1.5 + me.id) * 4
+			local rad = math.rad(r)
+			local x = math.sin(rad) * d
+			local y = math.cos(rad) * d
+			w:ClearAllPoints()
+			w:SetPoint("CENTER", p.Cookie, "CENTER", x, -y)
+			-- The sprite points down (head at the bottom) in the sheet; face the cookie.
+			w.Icon:SetRotation(math.rad(-r))
 		end
 	end
 end
 
 -------------------------------------------------------------------------------
--- Middle: the store
+-- Middle section: menu bar, ticker, rows / menus host
 -------------------------------------------------------------------------------
 
-function UI:CreateStore(f, top)
-	local p = CreateFrame("Frame", nil, f)
-	p:SetSize(STORE_W, PANEL_H)
-	p:SetPoint("TOPLEFT", PAD + LEFT_W + GAP, top)
-	self.store = p
-	p.Bg = Tiled(p, "storeTile", "BACKGROUND")
-	self.mode, self.amount = "buy", 1
+UI.BAR_H = 44
+UI.TICKER_H = 64
 
-	p.BuyMode = Button(p, "Buy", 44, 18, function()
-		UI.mode = "buy"
+function UI:CreateMiddle(f)
+	local p = CreateFrame("Frame", nil, f)
+	p:SetSize(MID_W, CONTENT_H)
+	p:SetPoint("TOPLEFT", MID_X, -TOP)
+	p:SetClipsChildren(true)
+	self.middle = p
+	p.Bg = p:CreateTexture(nil, "BACKGROUND")
+	p.Bg:SetAllPoints()
+	p.Bg:SetTexture(NS.Art("darkNoise"), "REPEAT", "REPEAT")
+	p.Bg:SetHorizTile(true)
+	p.Bg:SetVertTile(true)
+	p.Bg:SetTexCoord(0, MID_W / 512, 0, CONTENT_H / 512)
+	p.Bg:SetVertexColor(0.55, 0.55, 0.55)
+
+	-- Menu buttons.
+	local bar = CreateFrame("Frame", nil, p)
+	bar:SetPoint("TOPLEFT", 0, 0)
+	bar:SetPoint("TOPRIGHT", 0, 0)
+	bar:SetHeight(self.BAR_H)
+	p.Bar = bar
+	local names = { { "Options", "options" }, { "Stats", "stats" }, { "Info", "info" }, { "Legacy", "legacy" }, { "Guild", "guild" } }
+	bar.Buttons = {}
+	local x = 8
+	for _, def in ipairs(names) do
+		local b = UI.FancyButton(bar, def[1], 64, 24, function()
+			UI:ToggleMenu(def[2])
+		end)
+		b:SetPoint("LEFT", x, 0)
+		b.menu = def[2]
+		bar.Buttons[def[2]] = b
+		x = x + 68
+	end
+	-- Sugar lump under the Stats button.
+	local lump = CreateFrame("Button", nil, bar)
+	lump:SetSize(40, 40)
+	lump:SetPoint("LEFT", bar.Buttons.stats, "RIGHT", 2, -14)
+	lump:SetFrameLevel(bar:GetFrameLevel() + 5)
+	lump.Icon = lump:CreateTexture(nil, "ARTWORK")
+	lump.Icon:SetAllPoints()
+	lump.Icon2 = lump:CreateTexture(nil, "ARTWORK", nil, 1)
+	lump.Icon2:SetAllPoints()
+	lump.Count = UI.Text(lump, 12, "OUTLINE")
+	lump.Count:SetPoint("LEFT", lump, "RIGHT", 2, 6)
+	lump.Count:SetTextColor(0.4, 0.8, 1)
+	lump:SetScript("OnClick", function()
+		NS.Game:ClickLump()
 		UI:Refresh(true)
 	end)
-	p.BuyMode:SetPoint("TOPLEFT", 2, -2)
-	p.SellMode = Button(p, "Sell", 44, 18, function()
-		UI.mode = "sell"
-		UI:Refresh(true)
+	UI.SetTooltip(lump, function()
+		GameTooltip:SetText("Sugar lump")
+		for i, line in ipairs(NS.Game:LumpTooltipLines()) do
+			GameTooltip:AddLine(line, i == 1 and 1 or 0.8, i == 1 and 1 or 0.8, i == 1 and 1 or 0.8, true)
+		end
 	end)
-	p.SellMode:SetPoint("LEFT", p.BuyMode, "RIGHT", 2, 0)
-	Tooltip(p.SellMode, "Sell mode", "Selling gives back a quarter of the current price.")
-	p.Amounts = {}
-	for i, amount in ipairs(AMOUNTS) do
-		local b = Button(p, tostring(amount), 30, 18, function()
-			UI.amount = amount
-			UI:Refresh(true)
-		end)
-		b:SetPoint("TOPRIGHT", -2 - (#AMOUNTS - i) * 32, -2)
-		p.Amounts[i] = b
-	end
+	lump:Hide()
+	bar.Lump = lump
 
-	p.Rows = {}
-	for i, b in ipairs(NS.BUILDINGS) do
-		local row = CreateFrame("Button", nil, p)
-		row:SetSize(STORE_W, ROW_H - 1)
-		row:SetPoint("TOPLEFT", 0, -22 - (i - 1) * ROW_H)
-		row.Bg = row:CreateTexture(nil, "BACKGROUND")
-		row.Bg:SetTexture(WHITE)
-		row.Bg:SetAllPoints()
-		row.Bg:SetVertexColor(0, 0, 0, 0.35)
-		row:SetHighlightTexture(WHITE)
-		row:GetHighlightTexture():SetVertexColor(1, 1, 1, 0.08)
-		row.Icon = row:CreateTexture(nil, "ARTWORK")
-		row.Icon:SetSize(22, 22)
-		row.Icon:SetPoint("LEFT", 3, 0)
-		row.Name = Label(row, b.name, "GameFontNormalSmall")
-		row.Name:SetPoint("TOPLEFT", 30, -1)
-		row.Price = Label(row, "", "GameFontHighlightSmall")
-		row.Price:SetPoint("BOTTOMLEFT", 30, 1)
-		row.Owned = Label(row, "", "GameFontNormal")
-		row.Owned:SetPoint("RIGHT", -8, 0)
-		row.Owned:SetJustifyH("RIGHT")
-		row.Owned:SetTextColor(0.7, 0.7, 0.75)
-		row.building = b
-		row:RegisterForClicks("LeftButtonUp")
-		row:SetScript("OnClick", function(self)
-			if UI.mode == "sell" then
-				NS.Game:Sell(self.building, UI.amount)
-			else
-				NS.Game:Buy(self.building, UI.amount)
-			end
-		end)
-		row:SetScript("OnEnter", function(self)
-			UI:BuildingTooltip(self)
-		end)
-		row:SetScript("OnLeave", function()
-			GameTooltip:Hide()
-		end)
-		row:Hide()
-		p.Rows[i] = row
-	end
+	-- The news ticker.
+	local ticker = CreateFrame("Button", nil, p)
+	ticker:SetPoint("TOPLEFT", 0, -self.BAR_H)
+	ticker:SetPoint("TOPRIGHT", 0, -self.BAR_H)
+	ticker:SetHeight(self.TICKER_H)
+	ticker.Bg = ticker:CreateTexture(nil, "BACKGROUND")
+	NS.SetArt(ticker.Bg, "shadedBorders")
+	ticker.Bg:SetAllPoints()
+	ticker.Bg:SetAlpha(0.7)
+	ticker.Text = UI.Text(ticker, 13, "")
+	ticker.Text:SetPoint("TOPLEFT", 16, -10)
+	ticker.Text:SetPoint("BOTTOMRIGHT", -16, 10)
+	ticker.Text:SetJustifyH("CENTER")
+	ticker.Text:SetJustifyV("MIDDLE")
+	ticker.Text:SetWordWrap(true)
+	ticker.Text:SetTextColor(0.9, 0.9, 0.9)
+	ticker.Icon = ticker:CreateTexture(nil, "ARTWORK")
+	ticker.Icon:SetSize(24, 24)
+	ticker.Icon:SetPoint("LEFT", 8, 0)
+	NS.SetIcon(ticker.Icon, { 29, 8 })
+	ticker.Icon:Hide()
+	ticker:SetScript("OnClick", function()
+		NS.Game:ClickTicker()
+	end)
+	ticker:SetHighlightTexture(WHITE)
+	ticker:GetHighlightTexture():SetVertexColor(1, 1, 1, 0.05)
+	p.Ticker = ticker
+
+	-- Host for the building rows (UI_Rows.lua) and the menus (UI_Menus.lua).
+	local host = CreateFrame("Frame", nil, p)
+	host:SetPoint("TOPLEFT", 0, -(self.BAR_H + self.TICKER_H))
+	host:SetPoint("BOTTOMRIGHT", 0, 0)
+	p.Host = host
+	self:CreateRows(host)
 end
 
-function UI:BuildingTooltip(row)
-	local game, b = NS.Game, row.building
-	local owned = game:Count(b.id)
-	local each = game:BuildingCps(b)
-	GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
-	GameTooltip:SetText(b.name)
-	GameTooltip:AddLine(b.desc, 1, 1, 1, true)
-	GameTooltip:AddLine(" ")
-	GameTooltip:AddDoubleLine("Price", NS.Beautify(game:Price(b)), 0.8, 0.8, 0.8, 1, 1, 1)
-	GameTooltip:AddDoubleLine("Price for " .. self.amount, NS.Beautify(game:PriceFor(b, self.amount)), 0.8, 0.8, 0.8, 1, 1, 1)
-	if owned > 0 then
-		GameTooltip:AddDoubleLine("Sells for", NS.Beautify(game:SellPriceFor(b, 1)) .. " each", 0.8, 0.8, 0.8, 1, 1, 1)
+function UI:OnTicker()
+	if not self.middle then
+		return
 	end
-	GameTooltip:AddDoubleLine("Each produces", NS.BeautifyRate(each) .. " per second", 0.8, 0.8, 0.8, 1, 1, 1)
-	if owned > 0 then
-		local total = game:Cps(false)
-		local share = total > 0 and (owned * each / total * 100) or 0
-		GameTooltip:AddDoubleLine(string.format("Your %d produce", owned), string.format("%s per second (%.1f%%)", NS.BeautifyRate(owned * each), share), 0.8, 0.8, 0.8, 1, 1, 1)
+	local t = self.middle.Ticker
+	local game = NS.Game
+	t.Text:SetText(game.ticker or "")
+	if game.tickerEffect then
+		t.Text:SetTextColor(1, 0.9, 0.5)
+		t.Icon:Show()
+	else
+		t.Text:SetTextColor(0.9, 0.9, 0.9)
+		t.Icon:Hide()
 	end
-	GameTooltip:Show()
+	t.fade = 0
 end
 
 -------------------------------------------------------------------------------
--- Right: upgrades and buttons
+-- Shimmers: golden and wrath cookies, reindeer, storm drops
 -------------------------------------------------------------------------------
 
-function UI:CreateRight(f, top)
-	local p = CreateFrame("Frame", nil, f)
-	p:SetSize(RIGHT_W, PANEL_H)
-	p:SetPoint("TOPLEFT", PAD + LEFT_W + GAP + STORE_W + GAP, top)
-	self.right = p
-	p.Bg = Tiled(p, "storeTile", "BACKGROUND")
-	p.Header = Label(p, "Upgrades", "GameFontNormal")
-	p.Header:SetPoint("TOPLEFT", 4, -2)
-	p.Slots = {}
-	for i = 1, MAX_UPGRADES do
-		local slot = CreateFrame("Button", nil, p)
-		slot:SetSize(UPGRADE_SIZE, UPGRADE_SIZE)
-		local col, row = (i - 1) % UPGRADE_COLS, math.floor((i - 1) / UPGRADE_COLS)
-		slot:SetPoint("TOPLEFT", 4 + col * (UPGRADE_SIZE + UPGRADE_GAP), -22 - row * (UPGRADE_SIZE + UPGRADE_GAP))
-		slot.Border = slot:CreateTexture(nil, "BACKGROUND")
-		slot.Border:SetTexture(WHITE)
-		slot.Border:SetAllPoints()
-		slot.Icon = slot:CreateTexture(nil, "ARTWORK")
-		slot.Icon:SetPoint("TOPLEFT", 2, -2)
-		slot.Icon:SetPoint("BOTTOMRIGHT", -2, 2)
-		slot:SetHighlightTexture(WHITE)
-		slot:GetHighlightTexture():SetVertexColor(1, 1, 1, 0.15)
-		slot:RegisterForClicks("LeftButtonUp")
-		slot:SetScript("OnClick", function(self)
-			if self.upgrade then
-				NS.Game:BuyUpgrade(self.upgrade)
-			end
-		end)
-		slot:SetScript("OnEnter", function(self)
-			local u = self.upgrade
-			if not u then
-				return
-			end
-			local game = NS.Game
-			GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-			GameTooltip:SetText(game:UpgradeName(u))
-			GameTooltip:AddLine(u.desc, 1, 1, 1, true)
-			local cost = game:UpgradeCost(u)
-			local affordable = game.save.cookies >= cost
-			GameTooltip:AddDoubleLine("Price", NS.Beautify(cost), 0.8, 0.8, 0.8, affordable and 0.4 or 1, affordable and 1 or 0.4, 0.4)
-			GameTooltip:Show()
-		end)
-		slot:SetScript("OnLeave", function()
-			GameTooltip:Hide()
-		end)
-		slot:Hide()
-		p.Slots[i] = slot
-	end
-	p.More = Label(p, "", "GameFontDisableSmall")
-	p.More:SetPoint("TOPLEFT", 4, -22 - math.ceil(MAX_UPGRADES / UPGRADE_COLS) * (UPGRADE_SIZE + UPGRADE_GAP))
-	p.Empty = Label(p, "Nothing to buy yet. Upgrades show up as you own more buildings and bake more cookies.", "GameFontDisableSmall")
-	p.Empty:SetPoint("TOPLEFT", 4, -24)
-	p.Empty:SetWidth(RIGHT_W - 8)
-	p.Empty:SetWordWrap(true)
+function UI:CreateShimmerLayer(f)
+	local layer = CreateFrame("Frame", nil, f)
+	layer:SetPoint("TOPLEFT", 0, -TOP)
+	layer:SetPoint("BOTTOMRIGHT", -RIGHT_W, 0)
+	layer:SetFrameLevel(f:GetFrameLevel() + 40)
+	self.shimmerLayer = layer
+	self.shimmerButtons = {}
+	self.shimmerPool = {}
+end
 
-	p.Stats = Button(p, "Stats", 86, 20, function()
-		UI:ShowStats()
+local function ShimmerButton(self)
+	local b = table.remove(self.shimmerPool)
+	if b then
+		return b
+	end
+	b = CreateFrame("Button", nil, self.shimmerLayer)
+	b.Icon = b:CreateTexture(nil, "ARTWORK")
+	b.Icon:SetAllPoints()
+	b.Glow = b:CreateTexture(nil, "BACKGROUND")
+	NS.SetArt(b.Glow, "glint")
+	b.Glow:SetBlendMode("ADD")
+	b.Glow:SetPoint("CENTER")
+	b.Glow:SetAlpha(0.4)
+	b:RegisterForClicks("LeftButtonDown")
+	b:SetScript("OnClick", function(self)
+		if self.shimmer then
+			NS.Game:PopShimmer(self.shimmer)
+		end
 	end)
-	p.Stats:SetPoint("BOTTOMLEFT", 0, 24)
-	p.Achievements = Button(p, "Feats", 86, 20, function()
-		UI:ShowAchievements()
-	end)
-	p.Achievements:SetPoint("BOTTOMRIGHT", 0, 24)
-	Tooltip(p.Achievements, "Achievements", "Every achievement adds 1% to production and 4% milk for the kittens.")
-	p.Heaven = Button(p, "Heaven", 86, 20, function()
-		UI:ShowHeaven()
-	end)
-	p.Heaven:SetPoint("BOTTOMLEFT", 0, 0)
-	Tooltip(p.Heaven, "Heaven", "Ascend for heavenly chips and spend them on upgrades that last forever.")
-	p.Guild = Button(p, "Guild", 86, 20, function()
-		UI:ShowGuild()
-	end)
-	p.Guild:SetPoint("BOTTOMRIGHT", 0, 0)
-	Tooltip(p.Guild, "Guild board", "Bakeries of guild members who use MauCookie.")
-	p.Options = Label(p, "/mck options", "GameFontDisableSmall")
-	p.Options:SetPoint("BOTTOM", 0, 48)
-	p.Options:SetJustifyH("CENTER")
-	p.Options:SetWidth(RIGHT_W)
+	b:SetHighlightTexture(WHITE)
+	b:GetHighlightTexture():SetVertexColor(1, 1, 1, 0.15)
+	return b
+end
+
+function UI:ShimmerLook(b, me)
+	local S = NS.Game.save
+	local size = 96 * (me.sizeMult or 1)
+	b:SetSize(size, size)
+	b.Glow:SetSize(size * 1.6, size * 1.6)
+	b.Icon:SetVertexColor(1, 1, 1, 1)
+	if me.type == "reindeer" then
+		NS.SetArt(b.Icon, "reindeer")
+		b:SetSize(167, 212)
+		b.Glow:Hide()
+		return
+	end
+	b.Glow:Show()
+	local wrath = me.wrath and 1 or 0
+	if S.season == "valentines" and NS.HasArt("hearts") then
+		NS.SetSheetCell(b.Icon, "hearts", 96, 96, me.variant or 0, wrath)
+	elseif S.season == "fools" and NS.HasArt("spamCookies") then
+		NS.SetSheetCell(b.Icon, "spamCookies", 128, 128, (me.variant or 0) % 4, wrath)
+	elseif S.season == "easter" and NS.HasArt("bunnies") then
+		NS.SetSheetCell(b.Icon, "bunnies", 96, 96, (me.variant or 0) % 4, wrath)
+	elseif S.season == "halloween" and NS.HasArt("familiars") then
+		NS.SetSheetCell(b.Icon, "familiars", 96, 96, (me.variant or 0) % 4, wrath)
+	elseif S.season == "christmas" and NS.HasArt("goldenWreath") then
+		NS.SetArt(b.Icon, me.wrath and "wrathWreath" or "goldenWreath")
+	else
+		NS.SetArt(b.Icon, me.wrath and "wrath" or "golden")
+	end
+	if me.wrath then
+		b.Glow:SetVertexColor(1, 0.3, 0.2)
+	else
+		b.Glow:SetVertexColor(1, 0.9, 0.5)
+	end
+end
+
+function UI:OnShimmerAdded(me)
+	if not self.frame then
+		return
+	end
+	local b = ShimmerButton(self)
+	b.shimmer = me
+	me.variant = math.random(0, 7)
+	local layer = self.shimmerLayer
+	local lw, lh = layer:GetWidth(), layer:GetHeight()
+	if me.type == "reindeer" then
+		me.x = -100
+		me.y = 128 + math.random() * math.max(0, lh - 256)
+	else
+		me.x = 64 + math.random() * math.max(0, lw - 128)
+		me.y = 64 + math.random() * math.max(0, lh - 128)
+	end
+	self:ShimmerLook(b, me)
+	b:ClearAllPoints()
+	b:SetPoint("CENTER", layer, "TOPLEFT", me.x, -me.y)
+	b:Show()
+	self.shimmerButtons[me] = b
+end
+
+function UI:OnShimmerRemoved(me)
+	local b = self.shimmerButtons[me]
+	if b then
+		b:Hide()
+		b.shimmer = nil
+		self.shimmerButtons[me] = nil
+		table.insert(self.shimmerPool, b)
+	end
+end
+
+function UI:SyncShimmers()
+	if not self.frame then
+		return
+	end
+	for me, b in pairs(self.shimmerButtons) do
+		local alive = false
+		for _, s in ipairs(NS.Game.shimmers) do
+			if s == me then
+				alive = true
+			end
+		end
+		if not alive then
+			self:OnShimmerRemoved(me)
+		end
+	end
+	for _, me in ipairs(NS.Game.shimmers) do
+		if not self.shimmerButtons[me] then
+			self:OnShimmerAdded(me)
+		end
+	end
+end
+
+function UI:UpdateShimmers(dt)
+	local layer = self.shimmerLayer
+	local lw = layer:GetWidth()
+	for me, b in pairs(self.shimmerButtons) do
+		local frac = 1 - me.life / math.max(0.01, me.dur)
+		if me.type == "reindeer" then
+			me.x = -100 + frac * (lw + 200)
+			b:ClearAllPoints()
+			b:SetPoint("CENTER", layer, "TOPLEFT", me.x, -me.y + math.sin(frac * 40) * 6)
+		else
+			local curve = 1 - ((frac * 2 - 1) ^ 4)
+			local size = 96 * (me.sizeMult or 1) * (0.6 + 0.4 * math.max(0, curve)) * (1 + 0.04 * math.sin(GetTime() * 6))
+			b:SetSize(size, size)
+			b:SetAlpha(math.max(0.2, curve))
+			b.Icon:SetRotation(math.sin(GetTime() * 2 + me.id) * 0.1)
+		end
+	end
 end
 
 -------------------------------------------------------------------------------
--- Overlays over the store and upgrades
+-- Notifications (the original's notes, bottom of the middle section)
 -------------------------------------------------------------------------------
 
-local OVERLAY_W = STORE_W + GAP + RIGHT_W
-
-local function Overlay(f, top)
-	local o = CreateFrame("Frame", nil, f, "BackdropTemplate")
-	o:SetSize(OVERLAY_W, PANEL_H)
-	o:SetPoint("TOPLEFT", PAD + LEFT_W + GAP, top)
-	o:SetFrameLevel(f:GetFrameLevel() + 10)
-	o:EnableMouse(true)
-	o:SetBackdrop({ bgFile = WHITE })
-	o:SetBackdropColor(0.03, 0.03, 0.05, 0.96)
-	o:Hide()
-	return o
-end
-
-function UI:CreateOverlays(f, top)
-	self:CreateStats(f, top)
-	self:CreateAchievements(f, top)
-	self:CreateHeaven(f, top)
-	self:CreateGuild(f, top)
-end
-
-function UI:CreateStats(f, top)
-	local s = Overlay(f, top)
-	self.stats = s
-	s.Title = Label(s, "Statistics", "GameFontNormalLarge")
-	s.Title:SetPoint("TOPLEFT", 12, -8)
-	s.Rows = {}
-	for i = 1, 24 do
-		local row = CreateFrame("Frame", nil, s)
-		row:SetSize(OVERLAY_W - 24, 19)
-		row:SetPoint("TOPLEFT", 12, -36 - (i - 1) * 19)
-		row.Label = Label(row, "", "GameFontNormalSmall")
-		row.Label:SetPoint("LEFT")
-		row.Value = Label(row, "", "GameFontHighlightSmall")
-		row.Value:SetPoint("RIGHT")
-		row.Value:SetJustifyH("RIGHT")
-		s.Rows[i] = row
+function UI:CreateNotes(f)
+	self.notes = {}
+	self.noteQueue = {}
+	for i = 1, MAX_NOTES do
+		local n = CreateFrame("Button", nil, f)
+		n:SetSize(MID_W - 32, 56)
+		n:SetFrameLevel(f:GetFrameLevel() + 30)
+		n.Bg = n:CreateTexture(nil, "BACKGROUND")
+		NS.SetArt(n.Bg, "shadedBordersSoft")
+		n.Bg:SetAllPoints()
+		n.Fill = UI.Solid(n, "BACKGROUND", 0.05, 0.04, 0.04, 0.9)
+		n.Fill:SetAllPoints()
+		n.Fill:SetDrawLayer("BACKGROUND", -1)
+		n.Icon = n:CreateTexture(nil, "ARTWORK")
+		n.Icon:SetSize(44, 44)
+		n.Icon:SetPoint("LEFT", 6, 0)
+		n.Title = UI.Text(n, 13, "")
+		n.Title:SetPoint("TOPLEFT", 58, -8)
+		n.Title:SetPoint("RIGHT", -8, 0)
+		n.Title:SetTextColor(1, 0.95, 0.8)
+		n.Body = UI.Text(n, 11, "")
+		n.Body:SetPoint("TOPLEFT", n.Title, "BOTTOMLEFT", 0, -2)
+		n.Body:SetPoint("BOTTOMRIGHT", -8, 6)
+		n.Body:SetJustifyV("TOP")
+		n.Body:SetWordWrap(true)
+		n.Body:SetTextColor(0.85, 0.85, 0.85)
+		n:SetScript("OnClick", function(self)
+			self.life = 0
+		end)
+		n.born = 0
+		n.life = 0
+		n:Hide()
+		self.notes[i] = n
 	end
-	s.Close = Button(s, "Close", 90, 22, function()
-		UI:HideOverlays()
-	end)
-	s.Close:SetPoint("BOTTOMRIGHT", -12, 10)
-	s.Wipe = Button(s, "Wipe save", 90, 22, function(self)
-		Confirm(self, "Wipe save", function()
-			UI:HideOverlays()
-			NS.Game:Wipe()
-		end)
-	end)
-	s.Wipe:SetPoint("BOTTOMLEFT", 12, 10)
-	Tooltip(s.Wipe, "Wipe save", "Starts the bakery over from zero: cookies, buildings, upgrades, achievements, prestige and heavenly upgrades. Click twice.")
 end
 
-function UI:CreateAchievements(f, top)
-	local a = Overlay(f, top)
-	self.achievements = a
-	a.Title = Label(a, "Achievements", "GameFontNormalLarge")
-	a.Title:SetPoint("TOPLEFT", 12, -8)
-	a.Summary = Label(a, "", "GameFontHighlightSmall")
-	a.Summary:SetPoint("LEFT", a.Title, "RIGHT", 12, 0)
-	a.Rows = {}
-	local perColumn = 32
-	local colW = (OVERLAY_W - 24) / 2
-	for i, ach in ipairs(NS.ACHIEVEMENTS) do
-		local row = CreateFrame("Frame", nil, a)
-		row:SetSize(colW - 6, 16)
-		local col, r = math.floor((i - 1) / perColumn), (i - 1) % perColumn
-		row:SetPoint("TOPLEFT", 12 + col * colW, -34 - r * 16)
-		row.Name = Label(row, ach.name, "GameFontHighlightSmall")
-		row.Name:SetPoint("LEFT")
-		row.Name:SetWidth(colW - 10)
-		row.Name:SetWordWrap(false)
-		row.ach = ach
-		row:EnableMouse(true)
-		row:SetScript("OnEnter", function(self)
-			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-			GameTooltip:SetText(self.ach.name)
-			GameTooltip:AddLine(self.ach.desc, 1, 1, 1, true)
-			GameTooltip:AddLine(NS.Game.save.achievements[self.ach.id] and "Unlocked. Production +1%, milk +4%." or "Locked.", 0.6, 0.6, 0.6)
-			GameTooltip:Show()
-		end)
-		row:SetScript("OnLeave", function()
-			GameTooltip:Hide()
-		end)
-		a.Rows[i] = row
+function UI:Notify(title, text, icon, quick)
+	if not self.frame then
+		return
 	end
-	a.Close = Button(a, "Close", 90, 22, function()
-		UI:HideOverlays()
-	end)
-	a.Close:SetPoint("TOPRIGHT", -12, -8)
-end
-
-function UI:CreateHeaven(f, top)
-	local h = Overlay(f, top)
-	self.heaven = h
-	h.Title = Label(h, "Heaven", "GameFontNormalLarge")
-	h.Title:SetPoint("TOPLEFT", 12, -8)
-	h.Chips = Label(h, "", "GameFontHighlight")
-	h.Chips:SetPoint("TOPLEFT", 12, -34)
-	h.Preview = Label(h, "", "GameFontHighlightSmall")
-	h.Preview:SetPoint("TOPLEFT", 12, -54)
-	h.Preview:SetWidth(OVERLAY_W - 24)
-	h.Preview:SetWordWrap(true)
-	h.Ascend = Button(h, "Ascend", 110, 24, function(self)
-		Confirm(self, "Ascend", function()
-			NS.Game:Ascend()
-			UI:RefreshHeaven()
-		end)
-	end)
-	h.Ascend:SetPoint("TOPLEFT", 12, -96)
-	Tooltip(h.Ascend, "Ascend", "Trades every cookie, building and upgrade for heavenly chips: one prestige level per chip, each level +1% production forever. Achievements and heavenly upgrades stay. Click twice.")
-	h.ShopTitle = Label(h, "Heavenly upgrades (hover for details)", "GameFontNormal")
-	h.ShopTitle:SetPoint("TOPLEFT", 12, -132)
-	h.Rows = {}
-	local perColumn = math.ceil(#NS.HEAVENLY / 2)
-	local colW = (OVERLAY_W - 24) / 2
-	for i, item in ipairs(NS.HEAVENLY) do
-		local row = CreateFrame("Frame", nil, h)
-		row:SetSize(colW - 6, 28)
-		local col, r = math.floor((i - 1) / perColumn), (i - 1) % perColumn
-		row:SetPoint("TOPLEFT", 12 + col * colW, -150 - r * 30)
-		row.Bg = row:CreateTexture(nil, "BACKGROUND")
-		row.Bg:SetTexture(WHITE)
-		row.Bg:SetAllPoints()
-		row.Bg:SetVertexColor(1, 1, 1, 0.04)
-		row.Icon = row:CreateTexture(nil, "ARTWORK")
-		row.Icon:SetSize(22, 22)
-		row.Icon:SetPoint("LEFT", 3, 0)
-		SetCell(row.Icon, item.icon)
-		row.Name = Label(row, item.name, "GameFontNormalSmall")
-		row.Name:SetPoint("TOPLEFT", 30, -2)
-		row.Name:SetWidth(colW - 100)
-		row.Name:SetWordWrap(false)
-		row.Cost = Label(row, string.format("%d chip%s", item.cost, item.cost == 1 and "" or "s"), "GameFontDisableSmall")
-		row.Cost:SetPoint("BOTTOMLEFT", 30, 2)
-		row.Buy = Button(row, "Buy", 54, 20, function()
-			NS.Game:BuyHeavenly(item)
-			UI:RefreshHeaven()
-		end)
-		row.Buy:SetPoint("RIGHT", -3, 0)
-		row.item = item
-		row:EnableMouse(true)
-		row:SetScript("OnEnter", function(self)
-			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-			GameTooltip:SetText(self.item.name)
-			GameTooltip:AddLine(self.item.desc, 1, 1, 1, true)
-			GameTooltip:AddLine(NS.Game:HasHeavenly(self.item.id) and "Owned." or string.format("%d heavenly chips.", self.item.cost), 0.6, 0.6, 0.6)
-			GameTooltip:Show()
-		end)
-		row:SetScript("OnLeave", function()
-			GameTooltip:Hide()
-		end)
-		h.Rows[i] = row
+	if not self.frame:IsShown() then
+		-- Keep the important ones for when the window opens.
+		if not quick and #self.noteQueue < MAX_NOTES then
+			table.insert(self.noteQueue, { title, text, icon })
+		end
+		return
 	end
-	h.Close = Button(h, "Close", 90, 22, function()
-		UI:HideOverlays()
-	end)
-	h.Close:SetPoint("BOTTOMRIGHT", -12, 10)
-end
-
-function UI:CreateGuild(f, top)
-	local g = Overlay(f, top)
-	self.guild = g
-	g.Title = Label(g, "Guild board", "GameFontNormalLarge")
-	g.Title:SetPoint("TOPLEFT", 12, -8)
-	g.Tabs = {}
-	local x = 12
-	for _, board in ipairs(NS.BOARDS) do
-		local key = board.key
-		local b = Button(g, board.name, 88, 20, function()
-			UI.guildTab = key
-			UI:RefreshGuild()
-		end)
-		b:SetPoint("TOPLEFT", x, -34)
-		g.Tabs[key] = b
-		x = x + 92
-	end
-	g.Head = Label(g, "", "GameFontDisableSmall")
-	g.Head:SetPoint("TOPLEFT", 12, -60)
-	g.Rows = {}
-	for i = 1, BOARD_ROWS do
-		local row = CreateFrame("Frame", nil, g)
-		row:SetSize(OVERLAY_W - 24, 17)
-		row:SetPoint("TOPLEFT", 12, -76 - (i - 1) * 17)
-		row.Rank = Label(row, "", "GameFontDisableSmall")
-		row.Rank:SetPoint("LEFT")
-		row.Rank:SetWidth(26)
-		row.Name = Label(row, "", "GameFontHighlightSmall")
-		row.Name:SetPoint("LEFT", 28, 0)
-		row.Name:SetWidth(150)
-		row.Name:SetWordWrap(false)
-		row.Value = Label(row, "", "GameFontHighlightSmall")
-		row.Value:SetPoint("LEFT", 186, 0)
-		row.Value:SetWidth(150)
-		row.Extra = Label(row, "", "GameFontDisableSmall")
-		row.Extra:SetPoint("LEFT", 340, 0)
-		row.Extra:SetWidth(80)
-		row.Online = Label(row, "", "GameFontHighlightSmall")
-		row.Online:SetPoint("RIGHT", -2, 0)
-		row.Online:SetJustifyH("RIGHT")
-		row:EnableMouse(true)
-		row:SetScript("OnEnter", function(self)
-			local e = self.entry
-			if not e then
-				return
-			end
-			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-			GameTooltip:SetText(e.name, NS.ClassColor(e.class))
-			GameTooltip:AddDoubleLine("Cookies, all runs", NS.Beautify(e.allTime or 0), 0.8, 0.8, 0.8, 1, 1, 1)
-			GameTooltip:AddDoubleLine("Cookies this run", NS.Beautify(e.run or 0), 0.8, 0.8, 0.8, 1, 1, 1)
-			GameTooltip:AddDoubleLine("Per second", NS.BeautifyRate(e.cps or 0), 0.8, 0.8, 0.8, 1, 1, 1)
-			GameTooltip:AddDoubleLine("Prestige", tostring(math.floor(e.prestige or 0)), 0.8, 0.8, 0.8, 1, 1, 1)
-			GameTooltip:AddDoubleLine("Ascensions", tostring(math.floor(e.ascensions or 0)), 0.8, 0.8, 0.8, 1, 1, 1)
-			GameTooltip:AddDoubleLine("Buildings", NS.Commas(e.buildings or 0), 0.8, 0.8, 0.8, 1, 1, 1)
-			GameTooltip:AddDoubleLine("Achievements", tostring(math.floor(e.feats or 0)), 0.8, 0.8, 0.8, 1, 1, 1)
-			GameTooltip:AddDoubleLine("Golden cookies", NS.Commas(e.golden or 0), 0.8, 0.8, 0.8, 1, 1, 1)
-			GameTooltip:AddDoubleLine("Status", e.online and (e.addon and "online, bakery running" or "online") or "offline", 0.8, 0.8, 0.8, 1, 1, 1)
-			if e.ts and e.ts > 0 then
-				GameTooltip:AddLine("Snapshot " .. Ago(NS.Now() - e.ts), 0.5, 0.5, 0.5)
-			end
-			GameTooltip:Show()
-		end)
-		row:SetScript("OnLeave", function()
-			GameTooltip:Hide()
-		end)
-		g.Rows[i] = row
-	end
-	g.Empty = Label(g, "", "GameFontDisableSmall")
-	g.Empty:SetPoint("TOPLEFT", 12, -80)
-	g.Empty:SetWidth(OVERLAY_W - 24)
-	g.Empty:SetWordWrap(true)
-	g.Note = Label(g, "", "GameFontDisableSmall")
-	g.Note:SetPoint("BOTTOMLEFT", 12, 40)
-	g.Note:SetWidth(OVERLAY_W - 24)
-	g.Note:SetWordWrap(true)
-	g.Close = Button(g, "Close", 90, 22, function()
-		UI:HideOverlays()
-	end)
-	g.Close:SetPoint("BOTTOMRIGHT", -12, 10)
-	self.guildTab = "allTime"
-end
-
-function UI:HideOverlays()
-	self.stats:Hide()
-	self.achievements:Hide()
-	self.heaven:Hide()
-	self.guild:Hide()
-	GameTooltip:Hide()
-end
-
-function UI:ShowStats()
-	self:HideOverlays()
-	self:RefreshStats()
-	self.stats:Show()
-end
-
-function UI:ShowAchievements()
-	self:HideOverlays()
-	self:RefreshAchievements()
-	self.achievements:Show()
-end
-
-function UI:ShowHeaven()
-	self:HideOverlays()
-	self:RefreshHeaven()
-	self.heaven:Show()
-end
-
-function UI:ShowGuild()
-	self:HideOverlays()
-	NS.Comm:OnBoardOpened()
-	self:RefreshGuild()
-	self.guild:Show()
-end
-
-function UI:RefreshStats()
-	local s = self.stats
-	local game, save = NS.Game, NS.Game.save
-	local unlocked = game:AchievementsUnlocked()
-	local stageNames = { [0] = "quiet", "awakened", "displeased", "angered" }
-	local stage = game:Stage()
-	local stageText = stageNames[stage]
-	if game:RawStage() > 0 and game:IsPledged() then
-		stageText = string.format("pledged, %s left", NS.FormatDuration((save.pledgeUntil or 0) - save.playTime))
-	elseif save.covenant then
-		stageText = "covenant"
-	end
-	local research = "-"
-	for _, r in ipairs(NS.RESEARCH) do
-		if not game:HasUpgrade(r.id) and r.order > 0 and game:HasUpgrade(NS.RESEARCH[r.order].id) then
-			local left = (save.researchReadyAt or 0) - save.playTime
-			research = left > 0 and (r.name .. " in " .. NS.FormatDuration(left)) or (r.name .. " available")
+	-- Find a free note, or recycle the oldest.
+	local note
+	for _, n in ipairs(self.notes) do
+		if not n:IsShown() then
+			note = n
 			break
 		end
 	end
-	local wrinklers = #game:Wrinklers()
-	local lines = {
-		{ "Cookies in bank", NS.Beautify(save.cookies) },
-		{ "Cookies baked this run", NS.Beautify(save.baked) },
-		{ "Cookies baked, all runs", NS.Beautify(game:AllTime()) },
-		{ "Cookies per second", NS.BeautifyRate(game:Cps(true)) },
-		{ "Cookies per click", NS.BeautifyRate(game:ClickPower()) },
-		{ "Cookie clicks", NS.Commas(save.clicks) },
-		{ "Handmade cookies", NS.Beautify(save.handmade) },
-		{ "Buildings owned (sold)", string.format("%s (%s)", NS.Commas(game:TotalBuildings()), NS.Commas(save.sold or 0)) },
-		{ "Upgrades bought", string.format("%d of %d", game:UpgradesBought(), #NS.UPGRADES) },
-		{ "Achievements", string.format("%d of %d (production +%d%%)", unlocked, #NS.ACHIEVEMENTS, unlocked) },
-		{ "Milk", string.format("%d%% (kittens: production x%.2f)", game:Milk() * 100, game:KittenMult()) },
-		{ "Golden cookies clicked", NS.Commas(save.golden) .. (save.goldenSwitch and " (switch on)" or "") },
-		{ "Grandmapocalypse", stageText },
-		{ "Wrinklers", string.format("%d of %d, eating %d%%", wrinklers, game:MaxWrinklers(), wrinklers * 5) },
-		{ "Elder pledges", NS.Commas(save.pledges or 0) },
-		{ "Next research", research },
-		{ "Prestige level", string.format("%d (production +%d%%)", save.prestige or 0, math.floor((save.prestige or 0) * game:PrestigePower())) },
-		{ "Heavenly chips to spend", NS.Commas(save.chips or 0) },
-		{ "Ascensions", NS.Commas(save.ascensions or 0) },
-		{ "Running since", date("%Y-%m-%d", save.started) },
-		{ "Time with the bakery running", NS.FormatDuration(save.playTime) },
-	}
-	for i, row in ipairs(s.Rows) do
-		local line = lines[i]
-		if line then
-			row.Label:SetText(line[1])
-			row.Value:SetText(line[2])
-			row:Show()
-		else
-			row:Hide()
-		end
-	end
-end
-
-function UI:RefreshAchievements()
-	local a = self.achievements
-	local save = NS.Game.save
-	local unlocked = 0
-	for _, row in ipairs(a.Rows) do
-		if save.achievements[row.ach.id] then
-			unlocked = unlocked + 1
-			row.Name:SetTextColor(1, 0.82, 0)
-		else
-			row.Name:SetTextColor(0.45, 0.45, 0.5)
-		end
-	end
-	a.Summary:SetText(string.format("%d of %d unlocked, production +%d%%, milk %d%%", unlocked, #NS.ACHIEVEMENTS, unlocked, unlocked * 4))
-end
-
-function UI:RefreshHeaven()
-	local h = self.heaven
-	if not h then
-		return
-	end
-	local game, save = NS.Game, NS.Game.save
-	local gain, level = game:AscendPreview()
-	h.Chips:SetText(string.format("Prestige level %d (production +%d%%). %s heavenly chip%s to spend.", save.prestige or 0, math.floor((save.prestige or 0) * game:PrestigePower()), NS.Commas(save.chips or 0), (save.chips or 0) == 1 and "" or "s"))
-	if gain > 0 then
-		h.Preview:SetText(string.format("Ascending now gives %d chip%s and takes you to prestige level %d. Cookies, buildings and upgrades reset; achievements and heavenly upgrades stay.", gain, gain == 1 and "" or "s", level))
-	else
-		h.Preview:SetText(string.format("Bake %s more cookies (all runs together) for the next heavenly chip. Prestige level is the cube root of all cookies ever baked divided by %s.", NS.Beautify(game:CookiesToNextChip()), NS.Beautify(NS.PRESTIGE_BASE)))
-	end
-	h.Ascend:SetEnabled(gain > 0)
-	for _, row in ipairs(h.Rows) do
-		local owned = game:HasHeavenly(row.item.id)
-		if owned then
-			row.Buy:SetText("Owned")
-			row.Buy:SetEnabled(false)
-			row.Name:SetTextColor(1, 0.82, 0)
-		else
-			row.Buy:SetText("Buy")
-			row.Buy:SetEnabled((save.chips or 0) >= row.item.cost)
-			row.Name:SetTextColor(1, 1, 1)
-		end
-	end
-end
-
-function UI:RefreshGuild()
-	local g = self.guild
-	if not g then
-		return
-	end
-	local tab = self.guildTab or "allTime"
-	local board
-	for _, def in ipairs(NS.BOARDS) do
-		SetSelected(g.Tabs[def.key], def.key == tab)
-		if def.key == tab then
-			board = def
-		end
-	end
-	local list, empty = {}, nil
-	if not IsInGuild() then
-		empty = "You are not in a guild. The board shows guild members who use MauCookie."
-	else
-		list = NS.Comm:Board(tab)
-		if #list <= 1 then
-			empty = "Nobody else in the guild has shown up yet. Bakeries of guild members who use MauCookie appear here; snapshots are kept and passed on, so you also see people who are offline."
-		end
-	end
-	g.Head:SetText(board and ("By " .. board.label) or "")
-	for i, row in ipairs(g.Rows) do
-		local e = list[i]
-		row.entry = e
-		if e then
-			row.Rank:SetText(i .. ".")
-			row.Name:SetText(e.name .. (e.me and " (you)" or ""))
-			row.Name:SetTextColor(NS.ClassColor(e.class))
-			local value = e.value or 0
-			if tab == "cps" then
-				row.Value:SetText(NS.BeautifyRate(value) .. " per second")
-			elseif tab == "prestige" then
-				row.Value:SetText(string.format("level %d", math.floor(value)))
-			elseif tab == "feats" then
-				row.Value:SetText(string.format("%d of %d", math.floor(value), #NS.ACHIEVEMENTS))
-			else
-				row.Value:SetText(NS.Beautify(value))
+	if not note then
+		note = self.notes[1]
+		for _, n in ipairs(self.notes) do
+			if n.born < note.born then
+				note = n
 			end
-			row.Extra:SetText(string.format("prestige %d", math.floor(e.prestige or 0)))
-			if e.online then
-				row.Online:SetText(e.addon and "|cff60ff60online|r" or "|cffa0d0a0online|r")
-			else
-				row.Online:SetText("|cff707070offline|r")
-			end
-			row:Show()
-		else
-			row:Hide()
 		end
 	end
-	g.Empty:ClearAllPoints()
-	g.Empty:SetPoint("TOPLEFT", 12, -80 - math.min(#list, BOARD_ROWS) * 17)
-	g.Empty:SetText(empty or "")
-	g.Empty:SetShown(empty ~= nil)
-	if NS.GetSettings().shareScores then
-		g.Note:SetText("Snapshots travel over the guild addon channel and are kept locally. Yours goes out when something changes, at most once a minute. Hover a name for everything.")
+	note.Title:SetText(title or "")
+	note.Body:SetText(text or "")
+	if icon then
+		NS.SetIcon(note.Icon, icon)
+		note.Icon:Show()
 	else
-		g.Note:SetText("Sharing is off in the options: you keep what you have, nothing is sent.")
+		note.Icon:Hide()
 	end
+	note.life = quick and 4 or 8
+	note.born = GetTime()
+	note:SetAlpha(1)
+	note:Show()
+	self:LayoutNotes()
 end
 
-function UI:OnGuildDataChanged()
-	if self.guild and self.guild:IsShown() then
-		self:RefreshGuild()
-	end
-end
-
--------------------------------------------------------------------------------
--- Golden cookie and storm drops
--------------------------------------------------------------------------------
-
-local function CookieButton(f, size, onClick)
-	local g = CreateFrame("Button", nil, f)
-	g:SetSize(size, size)
-	g:SetFrameLevel(f:GetFrameLevel() + 20)
-	g.Glow = RoundIcon(g, "BACKGROUND")
-	g.Glow:SetTexture(WHITE)
-	g.Glow:SetBlendMode("ADD")
-	g.Glow:SetVertexColor(1, 0.85, 0.3, 0.5)
-	g.Glow:SetPoint("CENTER")
-	g.Glow:SetSize(size * 1.5, size * 1.5)
-	g.Icon = g:CreateTexture(nil, "ARTWORK")
-	g.Icon:SetAllPoints()
-	g.Icon:SetTexture(NS.Art("golden"))
-	g:RegisterForClicks("LeftButtonDown")
-	g:SetScript("OnClick", onClick)
-	g:Hide()
-	return g
-end
-
-local function RandomSpot(f, margin)
-	local x = margin + math.random() * (f:GetWidth() - 2 * margin)
-	local y = margin + 30 + math.random() * (f:GetHeight() - 2 * margin - 30)
-	return x, y
-end
-
-function UI:CreateGolden(f)
-	local g = CookieButton(f, 56, function()
-		NS.Game:ClickGolden()
-	end)
-	g:SetScript("OnEnter", function(self)
-		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-		GameTooltip:SetText(self.wrath and "Wrath cookie" or "Golden cookie")
-		GameTooltip:AddLine(self.wrath and "The grandmas' doing. It might still be worth it." or "Quick, click it!", 1, 1, 1, true)
-		GameTooltip:Show()
-	end)
-	g:SetScript("OnLeave", function()
-		GameTooltip:Hide()
-	end)
-	self.golden = g
-end
-
-function UI:ShowGolden(wrath)
-	local f, g = self.frame, self.golden
-	if not f then
-		return
-	end
-	g.wrath = wrath
-	g.Icon:SetTexture(NS.Art(wrath and "wrath" or "golden"))
-	if wrath then
-		g.Glow:SetVertexColor(1, 0.2, 0.1, 0.5)
-	else
-		g.Glow:SetVertexColor(1, 0.85, 0.3, 0.5)
-	end
-	local x, y = RandomSpot(f, 50)
-	g:ClearAllPoints()
-	g:SetPoint("CENTER", f, "TOPLEFT", x, -y)
-	g.t = 0
-	g:Show()
-	NS.PlayKit(wrath and "IG_CREATURE_AGGRO_SELECT" or "UI_GARRISON_TOAST_FOLLOWER_GAINED")
-end
-
-function UI:HideGolden()
-	if self.golden then
-		self.golden:Hide()
-	end
-end
-
-function UI:CreateDrops(f)
-	self.drops = {}
-	for i = 1, MAX_DROPS do
-		local d = CookieButton(f, 34, function(self)
-			if self.value then
-				NS.Game:ClickDrop(self.value)
-				self.value = nil
-				self:Hide()
-			end
-		end)
-		d.Glow:SetVertexColor(1, 0.85, 0.3, 0.35)
-		self.drops[i] = d
-	end
-end
-
-function UI:SpawnDrop(value, life)
-	local f = self.frame
-	if not f then
-		return
-	end
-	for _, d in ipairs(self.drops) do
-		if not d:IsShown() then
-			local x, y = RandomSpot(f, 36)
-			d:ClearAllPoints()
-			d:SetPoint("CENTER", f, "TOPLEFT", x, -y)
-			d.value = value
-			d.left = life
-			d:Show()
-			return
+function UI:LayoutNotes()
+	local shown = {}
+	for _, n in ipairs(self.notes) do
+		if n:IsShown() then
+			table.insert(shown, n)
 		end
 	end
+	table.sort(shown, function(a, b)
+		return a.born > b.born
+	end)
+	for i, n in ipairs(shown) do
+		n:ClearAllPoints()
+		n:SetPoint("BOTTOMLEFT", self.middle, "BOTTOMLEFT", 16, 8 + (i - 1) * 60)
+	end
+end
+
+function UI:UpdateNotes(dt)
+	local changed = false
+	for _, n in ipairs(self.notes) do
+		if n:IsShown() then
+			n.life = n.life - dt
+			if n.life <= 0 then
+				n:Hide()
+				changed = true
+			elseif n.life < 1 then
+				n:SetAlpha(n.life)
+			end
+		end
+	end
+	if changed then
+		self:LayoutNotes()
+	end
+	if #self.noteQueue > 0 then
+		local q = table.remove(self.noteQueue, 1)
+		self:Notify(q[1], q[2], q[3])
+	end
 end
 
 -------------------------------------------------------------------------------
--- Feedback
+-- Floating texts
 -------------------------------------------------------------------------------
 
-function UI:OnClick(power)
+function UI:OnClick(amount)
 	if not self.frame or not self.frame:IsShown() or not NS.GetSettings().popups then
 		return
 	end
@@ -1104,239 +1024,660 @@ function UI:OnClick(power)
 	end
 	local cx, cy = GetCursorPosition()
 	local x = NS.Clamp(cx / scale - left, 10, LEFT_W - 10)
-	local y = NS.Clamp(cy / scale - bottom + 14, 10, PANEL_H - 10)
+	local y = NS.Clamp(cy / scale - bottom + 14, 10, CONTENT_H - 10)
+	self:Float(p, "+" .. NS.Beautify(amount, 1), x + (math.random() - 0.5) * 20, y)
+	p.Cookie.size = 0.95
+end
+
+-- A rising, fading text in a layer at window coordinates (x from left, y from bottom).
+function UI:Float(parent, text, x, y, size)
 	local fs = table.remove(self.floatPool)
 	if not fs then
-		fs = p.FloatLayer:CreateFontString(nil, "OVERLAY")
+		fs = self.floatLayer:CreateFontString(nil, "OVERLAY")
 		fs:SetFont(FONT, 14, "OUTLINE")
 	end
-	fs:SetText("+" .. NS.BeautifyRate(power, true))
+	fs:SetFont(FONT, size or 14, "OUTLINE")
+	fs:SetText(text)
 	fs:SetTextColor(1, 1, 1)
-	fs.x, fs.y0, fs.t = x + (math.random() - 0.5) * 20, y, 0
+	fs.parent = parent
+	fs.x, fs.y0, fs.t = x, y, 0
 	fs:ClearAllPoints()
-	fs:SetPoint("CENTER", p, "BOTTOMLEFT", fs.x, fs.y0)
+	fs:SetPoint("CENTER", parent, "BOTTOMLEFT", fs.x, fs.y0)
 	fs:SetAlpha(1)
 	fs:Show()
 	table.insert(self.floats, fs)
-	if #self.floats > 30 then
+	if #self.floats > MAX_FLOATS then
 		local old = table.remove(self.floats, 1)
 		old:Hide()
 		table.insert(self.floatPool, old)
 	end
 end
 
-function UI:Banner(text)
-	if self.banners then
-		table.insert(self.banners, text)
+-- Storm drops and other popups at a shimmer's spot.
+function UI:Popup(text, me)
+	if not self.frame or not self.frame:IsShown() then
+		return
 	end
+	local layer = self.shimmerLayer
+	if me and me.x then
+		self:Float(layer, text, me.x, layer:GetHeight() - me.y, 13)
+	end
+end
+
+function UI:UpdateFloats(dt)
+	for i = #self.floats, 1, -1 do
+		local fs = self.floats[i]
+		fs.t = fs.t + dt / 0.9
+		if fs.t >= 1 then
+			fs:Hide()
+			table.remove(self.floats, i)
+			table.insert(self.floatPool, fs)
+		else
+			fs:SetPoint("CENTER", fs.parent, "BOTTOMLEFT", fs.x, fs.y0 + 40 * fs.t)
+			fs:SetAlpha(fs.t < 0.5 and 1 or (1 - (fs.t - 0.5) * 2))
+		end
+	end
+end
+
+-------------------------------------------------------------------------------
+-- Prompt: an in-window dialog with a title, text, an optional crate grid
+-- and up to three buttons.
+-------------------------------------------------------------------------------
+
+function UI:CreatePrompt(f)
+	local p = CreateFrame("Frame", nil, f)
+	p:SetSize(420, 200)
+	p:SetPoint("CENTER", f, "CENTER", -RIGHT_W / 2, 0)
+	p:SetFrameLevel(f:GetFrameLevel() + 60)
+	p:EnableMouse(true)
+	p.Shade = UI.Solid(f, "OVERLAY", 0, 0, 0, 0.6)
+	p.Shade:SetAllPoints(f)
+	p.Shade:Hide()
+	p.Bg = p:CreateTexture(nil, "BACKGROUND")
+	p.Bg:SetTexture(NS.Art("darkNoise"), "REPEAT", "REPEAT")
+	p.Bg:SetHorizTile(true)
+	p.Bg:SetVertTile(true)
+	p.Bg:SetAllPoints()
+	p.Border = p:CreateTexture(nil, "BORDER")
+	p.Border:SetTexture(WHITE)
+	p.Border:SetVertexColor(0.89, 0.87, 0.28, 0.9)
+	p.Border:SetPoint("TOPLEFT", -1, 1)
+	p.Border:SetPoint("BOTTOMRIGHT", 1, -1)
+	p.Bg:SetDrawLayer("BORDER", 1)
+	p.Title = p:CreateFontString(nil, "OVERLAY")
+	p.Title:SetFont(TITLE_FONT, 18, "")
+	p.Title:SetShadowOffset(1, -1)
+	p.Title:SetPoint("TOP", 0, -10)
+	p.Body = UI.Text(p, 12, "")
+	p.Body:SetPoint("TOPLEFT", 16, -38)
+	p.Body:SetPoint("TOPRIGHT", -16, -38)
+	p.Body:SetJustifyH("CENTER")
+	p.Body:SetWordWrap(true)
+	p.Body:SetSpacing(2)
+	p.Grid = CreateFrame("Frame", nil, p)
+	p.Grid:SetPoint("TOPLEFT", 16, -70)
+	p.Grid:SetPoint("TOPRIGHT", -16, -70)
+	p.Grid:SetHeight(1)
+	p.Grid.Crates = {}
+	p.Selected = UI.Text(p, 12, "")
+	p.Selected:SetPoint("TOP", p.Grid, "BOTTOM", 0, -4)
+	p.Selected:SetJustifyH("CENTER")
+	p.Selected:SetTextColor(1, 0.9, 0.6)
+	p.Buttons = {}
+	for i = 1, 3 do
+		local b = UI.FancyButton(p, "", 110, 24, function(self)
+			if self.action then
+				local action = self.action
+				UI:ClosePrompt()
+				action()
+			else
+				UI:ClosePrompt()
+			end
+		end)
+		b:Hide()
+		p.Buttons[i] = b
+	end
+	p:Hide()
+	self.prompt = p
+end
+
+-- buttons: { { "Yes", function }, { "No" } }; grid: list of { icon, name, onPick } with selected flag
+function UI:Prompt(title, text, buttons, grid, gridInfo)
+	local p = self.prompt
+	p.Title:SetText(title or "")
+	p.Body:SetText(text or "")
+	local bodyH = p.Body:GetStringHeight() + 12
+	for _, c in ipairs(p.Grid.Crates) do
+		c:Hide()
+	end
+	local gridH = 0
+	p.Selected:SetText("")
+	if grid and #grid > 0 then
+		local per = 6
+		local size = 60
+		local cols = math.min(per, #grid)
+		local gw = cols * size
+		for i, item in ipairs(grid) do
+			local c = p.Grid.Crates[i]
+			if not c then
+				c = CreateFrame("Button", nil, p.Grid)
+				c:SetSize(48, 48)
+				c.Frame = c:CreateTexture(nil, "BORDER")
+				c.Frame:SetPoint("TOPLEFT", -6, 6)
+				c.Frame:SetPoint("BOTTOMRIGHT", 6, -6)
+				c.Icon = c:CreateTexture(nil, "ARTWORK")
+				c.Icon:SetAllPoints()
+				c:SetScript("OnClick", function(self)
+					if self.item and self.item.onPick then
+						self.item.onPick(self.item)
+					end
+					for _, o in ipairs(p.Grid.Crates) do
+						if o.item then
+							o.item.selected = (o == self)
+							NS.SetSheetCell(o.Frame, "upgradeFrame", 60, 60, o.item.selected and 1 or 0, 0)
+						end
+					end
+					p.Selected:SetText(self.item and self.item.name or "")
+				end)
+				UI.SetTooltip(c, function(self)
+					if self.item then
+						GameTooltip:SetText(self.item.name)
+						if self.item.desc then
+							GameTooltip:AddLine(self.item.desc, 1, 1, 1, true)
+						end
+					end
+				end)
+				p.Grid.Crates[i] = c
+			end
+			c.item = item
+			NS.SetIcon(c.Icon, item.icon)
+			NS.SetSheetCell(c.Frame, "upgradeFrame", 60, 60, item.selected and 1 or 0, 0)
+			local col, row = (i - 1) % per, math.floor((i - 1) / per)
+			c:ClearAllPoints()
+			c:SetPoint("TOPLEFT", p.Grid, "TOP", -gw / 2 + col * size + 6, -row * size - 6)
+			c:Show()
+			if item.selected then
+				p.Selected:SetText(item.name)
+			end
+		end
+		gridH = math.ceil(#grid / per) * size + 22
+		p.Grid:ClearAllPoints()
+		p.Grid:SetPoint("TOPLEFT", 16, -(38 + bodyH))
+		p.Grid:SetPoint("TOPRIGHT", -16, -(38 + bodyH))
+		p.Grid:SetHeight(gridH - 22)
+		if gridInfo then
+			p.Selected:SetText(gridInfo)
+		end
+	end
+	local n = 0
+	for i, b in ipairs(p.Buttons) do
+		local def = buttons and buttons[i]
+		if def then
+			b:SetText(def[1])
+			b.action = def[2]
+			b:Show()
+			n = n + 1
+		else
+			b:Hide()
+		end
+	end
+	local totalW = n * 118
+	for i = 1, n do
+		local b = p.Buttons[i]
+		b:ClearAllPoints()
+		b:SetPoint("BOTTOM", p, "BOTTOM", -totalW / 2 + (i - 1) * 118 + 59, 12)
+	end
+	p:SetHeight(38 + bodyH + gridH + 48)
+	p.Shade:Show()
+	p:Show()
+	self.prompt.open = true
+end
+
+function UI:ClosePrompt()
+	local p = self.prompt
+	p:Hide()
+	p.Shade:Hide()
+	p.open = nil
+	GameTooltip:Hide()
+end
+
+-- Two-step confirmation used by sugar lump spending (the original asks).
+function UI:ConfirmLumps(n, what, action)
+	self:Prompt("Spend sugar lumps", string.format("Do you want to spend %d sugar lump%s to %s?", n, n == 1 and "" or "s", what), { { "Yes", action }, { "No" } })
+end
+
+-------------------------------------------------------------------------------
+-- Selectors (milk, background, golden cookie sound)
+-------------------------------------------------------------------------------
+
+function UI:OpenSelector(u)
+	local game = NS.Game
+	local S = game.save
+	local grid = {}
+	if u.name == "Milk selector" then
+		for i, m in ipairs(NS.MILKS) do
+			local ok = true
+			if m.type == 1 and not game:Has("Fanciful dairy selection") then ok = false end
+			if m.rank and m.rank > math.floor(game:AchievementsOwned() / 25) then ok = false end
+			if ok then
+				table.insert(grid, { icon = m.icon, name = m.name, selected = (S.milkType or 0) == m.index, onPick = function()
+					S.milkType = m.index
+					UI:RefreshBackground()
+				end })
+			end
+		end
+	elseif u.name == "Background selector" then
+		for _, bg in ipairs(NS.BGS) do
+			local ok = true
+			if bg.order >= 4.9 and not game:Has("Distinguished wallpaper assortment") then ok = false end
+			if ok then
+				table.insert(grid, { icon = bg.icon, name = bg.name, selected = (S.bgType or 0) == bg.index, onPick = function()
+					S.bgType = bg.index
+					UI:RefreshBackground()
+				end })
+			end
+		end
+	elseif u.name == "Golden cookie sound selector" then
+		for i, c in ipairs(NS.CHIMES) do
+			table.insert(grid, { icon = c.icon, name = c.name, selected = (S.chimeType or 0) == i - 1, onPick = function()
+				S.chimeType = i - 1
+			end })
+		end
+	else
+		return
+	end
+	self:Prompt(u.name, u.desc, { { "Close" } }, grid)
+end
+
+-------------------------------------------------------------------------------
+-- Santa and dragon
+-------------------------------------------------------------------------------
+
+function UI:CreateSpecialPanel(p)
+	local s = CreateFrame("Frame", nil, p)
+	s:SetSize(LEFT_W - 24, 230)
+	s:SetPoint("BOTTOM", 0, 90)
+	s:SetFrameLevel(p:GetFrameLevel() + 6)
+	s:EnableMouse(true)
+	s.Bg = s:CreateTexture(nil, "BACKGROUND")
+	s.Bg:SetTexture(NS.Art("darkNoise"), "REPEAT", "REPEAT")
+	s.Bg:SetHorizTile(true)
+	s.Bg:SetVertTile(true)
+	s.Bg:SetAllPoints()
+	s.Border = s:CreateTexture(nil, "BORDER")
+	s.Border:SetTexture(WHITE)
+	s.Border:SetVertexColor(0.89, 0.87, 0.28, 0.8)
+	s.Border:SetPoint("TOPLEFT", -1, 1)
+	s.Border:SetPoint("BOTTOMRIGHT", 1, -1)
+	s.Bg:SetDrawLayer("BORDER", 1)
+	s.Pic = CreateFrame("Button", nil, s)
+	s.Pic:SetSize(96, 96)
+	s.Pic:SetPoint("TOP", 0, -8)
+	s.Pic.Icon = s.Pic:CreateTexture(nil, "ARTWORK")
+	s.Pic.Icon:SetAllPoints()
+	s.Pic:SetScript("OnClick", function()
+		if UI.specialTab == "dragon" then
+			NS.Game:PetDragon()
+		end
+	end)
+	s.Title = s:CreateFontString(nil, "OVERLAY")
+	s.Title:SetFont(TITLE_FONT, 15, "")
+	s.Title:SetShadowOffset(1, -1)
+	s.Title:SetPoint("TOP", s.Pic, "BOTTOM", 0, -4)
+	s.Title:SetWidth(LEFT_W - 40)
+	s.Title:SetJustifyH("CENTER")
+	s.Action = UI.FancyButton(s, "", 200, 24, function()
+		if UI.specialTab == "santa" then
+			NS.Game:UpgradeSanta()
+		else
+			NS.Game:UpgradeDragon()
+		end
+		UI:RefreshSpecial()
+	end)
+	s.Action:SetPoint("TOP", s.Title, "BOTTOM", 0, -6)
+	s.Cost = UI.Text(s, 11, "")
+	s.Cost:SetPoint("TOP", s.Action, "BOTTOM", 0, -4)
+	s.Cost:SetWidth(LEFT_W - 40)
+	s.Cost:SetJustifyH("CENTER")
+	s.Cost:SetWordWrap(true)
+	s.Cost:SetTextColor(0.8, 0.8, 0.8)
+	s.Auras = {}
+	for i = 1, 2 do
+		local a = CreateFrame("Button", nil, s)
+		a:SetSize(48, 48)
+		a.Frame = a:CreateTexture(nil, "BORDER")
+		a.Frame:SetPoint("TOPLEFT", -6, 6)
+		a.Frame:SetPoint("BOTTOMRIGHT", 6, -6)
+		NS.SetSheetCell(a.Frame, "upgradeFrame", 60, 60, 0, 0)
+		a.Icon = a:CreateTexture(nil, "ARTWORK")
+		a.Icon:SetAllPoints()
+		a.slot = i
+		a:SetScript("OnClick", function(self)
+			UI:PickAura(self.slot)
+		end)
+		UI.SetTooltip(a, function(self)
+			local S = NS.Game.save
+			local id = self.slot == 2 and (S.dragonAura2 or 0) or (S.dragonAura or 0)
+			local aura = NS.DRAGON_AURAS[id]
+			GameTooltip:SetText(aura and aura.name or "No aura")
+			GameTooltip:AddLine(aura and aura.desc or "", 1, 1, 1, true)
+			GameTooltip:AddLine("Click to change the dragon's " .. (self.slot == 2 and "secondary " or "") .. "aura.", 0.7, 0.7, 0.7, true)
+		end)
+		a:Hide()
+		s.Auras[i] = a
+	end
+	s.Auras[1]:SetPoint("BOTTOM", -32, 10)
+	s.Auras[2]:SetPoint("BOTTOM", 32, 10)
+	s.Close = UI.FancyButton(s, "x", 20, 20, function()
+		UI:ToggleSpecial(nil)
+	end)
+	s.Close:SetPoint("TOPRIGHT", -4, -4)
+	s:Hide()
+	p.Special = s
+end
+
+function UI:ToggleSpecial(kind)
+	if kind == nil or self.specialTab == kind then
+		self.specialTab = nil
+		self.left.Special:Hide()
+	else
+		self.specialTab = kind
+		self.left.Special:Show()
+	end
+	self:RefreshSpecial()
+end
+
+function UI:RefreshSpecial()
+	local p = self.left
+	local game = NS.Game
+	local S = game.save
+	local tabs = game:SpecialTabs()
+	for i, t in ipairs(p.Tabs) do
+		local kind = tabs[i]
+		if kind then
+			t.kind = kind
+			local selected = self.specialTab == kind
+			local size = selected and 72 or 48
+			t:SetSize(size, size)
+			t:ClearAllPoints()
+			t:SetPoint("BOTTOMLEFT", 12 + (selected and 0 or 12), 12 + (i - 1) * 64)
+			if kind == "santa" then
+				NS.SetFrame(t.Icon, "santa", S.santaLevel or 0)
+			else
+				local info = game:DragonLevelInfo()
+				NS.SetFrame(t.Icon, "dragon", info and info.pic or 0)
+			end
+			t:Show()
+		else
+			t.kind = nil
+			t:Hide()
+		end
+	end
+	if self.specialTab and not tContains(tabs, self.specialTab) then
+		self.specialTab = nil
+		p.Special:Hide()
+	end
+	local s = p.Special
+	if not s:IsShown() then
+		return
+	end
+	if self.specialTab == "santa" then
+		NS.SetFrame(s.Pic.Icon, "santa", S.santaLevel or 0)
+		s.Title:SetText(game:SantaName())
+		if (S.santaLevel or 0) < 14 then
+			s.Action:SetText("Evolve")
+			s.Action:SetEnabledLook(S.cookies > game:SantaCost())
+			s.Cost:SetText("Cost: " .. NS.Beautify(game:SantaCost()) .. " cookies")
+		else
+			s.Action:SetText("Fully evolved")
+			s.Action:SetEnabledLook(false)
+			s.Cost:SetText("Santa has reached his final form.")
+		end
+		s.Auras[1]:Hide()
+		s.Auras[2]:Hide()
+	else
+		local info = game:DragonLevelInfo()
+		NS.SetFrame(s.Pic.Icon, "dragon", info and info.pic or 0)
+		s.Title:SetText(info and info.name or "Dragon")
+		local kind = game:DragonCost()
+		if kind == "done" then
+			s.Action:SetText("Your dragon is fully trained.")
+			s.Action:SetEnabledLook(false)
+			s.Cost:SetText("")
+		else
+			s.Action:SetText(info and info.action or "Train")
+			s.Action:SetEnabledLook(game:DragonCanBuy())
+			s.Cost:SetText("Cost: " .. game:DragonCostText())
+		end
+		if (S.dragonLevel or 0) >= 5 then
+			local a1 = NS.DRAGON_AURAS[S.dragonAura or 0]
+			NS.SetIcon(s.Auras[1].Icon, a1 and a1.pic or { 0, 7 })
+			s.Auras[1]:Show()
+			if game:CanUseSecondAura() then
+				local a2 = NS.DRAGON_AURAS[S.dragonAura2 or 0]
+				NS.SetIcon(s.Auras[2].Icon, a2 and a2.pic or { 0, 7 })
+				s.Auras[2]:Show()
+				s.Auras[1]:ClearAllPoints()
+				s.Auras[1]:SetPoint("BOTTOM", -32, 10)
+			else
+				s.Auras[2]:Hide()
+				s.Auras[1]:ClearAllPoints()
+				s.Auras[1]:SetPoint("BOTTOM", 0, 10)
+			end
+		else
+			s.Auras[1]:Hide()
+			s.Auras[2]:Hide()
+		end
+	end
+end
+
+function UI:PickAura(slot)
+	local game = NS.Game
+	local S = game.save
+	local current = slot == 2 and (S.dragonAura2 or 0) or (S.dragonAura or 0)
+	local other = slot == 2 and (S.dragonAura or 0) or (S.dragonAura2 or 0)
+	local grid = {}
+	local chosen = current
+	for _, aura in ipairs(game:KnownAuras()) do
+		if aura.id == 0 or aura.id ~= other then
+			table.insert(grid, { icon = aura.pic, name = aura.name, desc = aura.desc, selected = aura.id == current, onPick = function()
+				chosen = aura.id
+			end })
+		end
+	end
+	local highest = game:HighestBuilding()
+	local costText = highest and ("The cost of switching your aura is one " .. highest.single .. ". This will affect your CpS!") or "Switching your aura is free because you own no buildings."
+	self:Prompt(slot == 2 and "Set your dragon's secondary aura" or "Set your dragon's aura", costText, {
+		{ "Confirm", function()
+			game:SetDragonAura(chosen, slot)
+			UI:RefreshSpecial()
+		end },
+		{ "Cancel" },
+	}, grid)
 end
 
 -------------------------------------------------------------------------------
 -- Refresh
 -------------------------------------------------------------------------------
 
-local BUFF_LABELS = {
-	frenzy = "Frenzy x7", clickFrenzy = "Click frenzy x777", clot = "Clot x0.5", elderFrenzy = "Elder frenzy x666",
-	cursed = "Cursed finger", special = "Building special",
-}
+function UI:RefreshLeft()
+	local game, S = NS.Game, NS.Game.save
+	local p = self.left
+	local band = p.Band
+	local cookies = math.floor(S.cookies)
+	band.Count:SetText(NS.Beautify(cookies) .. (cookies == 1 and " cookie" or " cookies"))
+	local cps = game.cps or 0
+	local sucked = game.cpsSucked or 0
+	band.Cps:SetText("per second: " .. NS.Beautify(cps, 1))
+	if sucked > 0 then
+		band.Cps:SetTextColor(1, 0.3, 0.3)
+	else
+		band.Cps:SetTextColor(1, 1, 1)
+	end
+	if (S.prestige or 0) > 0 then
+		p.Prestige:SetText(string.format("prestige level %s", NS.Beautify(S.prestige)))
+	else
+		p.Prestige:SetText("")
+	end
+	-- Buffs.
+	local list = game:Buffs()
+	for i, b in ipairs(p.Buffs) do
+		local buff = list[i]
+		if buff and buff.time > 0 then
+			b.buff = buff
+			NS.SetIcon(b.Icon, buff.icon)
+			local T = (1 - buff.time / math.max(0.01, buff.maxTime)) * 144 % 144
+			local fx, fy = math.floor(T % 18), math.floor(T / 18)
+			NS.SetSheetCell(b.Pie, "pieFill", 48, 48, fx, fy)
+			b:Show()
+		else
+			b.buff = nil
+			b:Hide()
+		end
+	end
+	-- Lumps.
+	local lump = self.middle.Bar.Lump
+	if game:CanLumps() and (S.lumpsTotal or -1) > -1 then
+		local icon, icon2, opacity = game:LumpIcons()
+		NS.SetIcon(lump.Icon, icon)
+		NS.SetIcon(lump.Icon2, icon2)
+		lump.Icon2:SetAlpha(opacity)
+		lump.Count:SetText(tostring(S.lumps or 0))
+		lump:Show()
+	else
+		lump:Hide()
+	end
+	self:RefreshSpecial()
+end
 
 function UI:Refresh(force)
 	local f = self.frame
 	if not f or not f:IsShown() then
 		return
 	end
-	local game, save = NS.Game, NS.Game.save
-	local left = self.left
-	left.Count:SetText(NS.Beautify(save.cookies) .. " cookies")
-	local wrinklers = #game:Wrinklers()
-	left.Cps:SetText("per second: " .. NS.BeautifyRate(game:Cps(true)) .. (wrinklers > 0 and string.format(" (%d%% being eaten)", wrinklers * 5) or ""))
-	left.Baked:SetText("baked this run: " .. NS.Beautify(save.baked))
-	left.Hint:SetText(string.format("per click: %s", NS.BeautifyRate(game:ClickPower())))
-	if (save.prestige or 0) > 0 or (save.ascensions or 0) > 0 then
-		left.Prestige:SetText(string.format("prestige %d, all runs: %s", save.prestige or 0, NS.Beautify(game:AllTime())))
+	local game = NS.Game
+	self:RefreshLeft()
+	if game.storeDirty or force then
+		game.storeDirty = false
+		self:RebuildStore()
+	end
+	self:RefreshStore()
+	self:RefreshRows(force)
+	self:RefreshMenus(force)
+	if NS.Minigames then
+		self.minigameAcc = (self.minigameAcc or 0) + 1
+		if force or self.minigameAcc >= 10 then
+			self.minigameAcc = 0
+			NS.Minigames:Refresh()
+		end
+	end
+	if self.ascend and self.ascend:IsShown() then
+		self:RefreshAscend()
+	end
+end
+
+-- LibGraph's line trick: a solid texture with rotated texcoords, from
+-- (sx, sy) to (ex, ey) relative to C's centre, w pixels thick.
+function UI.DrawLine(T, C, sx, sy, ex, ey, w)
+	local dx, dy = ex - sx, ey - sy
+	local cx, cy = (sx + ex) / 2, (sy + ey) / 2
+	if dx < 0 then
+		dx, dy = -dx, -dy
+	end
+	local l = math.sqrt(dx * dx + dy * dy)
+	if l == 0 then
+		T:Hide()
+		return
+	end
+	local s, c = -dy / l, dx / l
+	local sc = s * c
+	local Bwid, Bhgt, BLx, BLy, TLx, TLy, TRx, TRy, BRx, BRy
+	if dy >= 0 then
+		Bwid = ((l * c) - (w * s)) / 2
+		Bhgt = ((w * c) - (l * s)) / 2
+		BLx, BLy, BRy = (w / l) * sc, s * s, (l / w) * sc
+		BRx, TLx, TLy, TRx = 1 - BLy, BLy, 1 - BRy, 1 - BLx
+		TRy = BRx
 	else
-		left.Prestige:SetText("")
+		Bwid = ((l * c) + (w * s)) / 2
+		Bhgt = ((w * c) + (l * s)) / 2
+		BLx, BLy, BRx = s * s, -(l / w) * sc, 1 + (w / l) * sc
+		BRy, TLx, TLy, TRy = BLx, 1 - BRx, 1 - BLx, 1 - BLy
+		TRx = TLy
 	end
+	T:ClearAllPoints()
+	T:SetPoint("BOTTOMLEFT", C, "CENTER", cx - Bwid, cy - Bhgt)
+	T:SetPoint("TOPRIGHT", C, "CENTER", cx + Bwid, cy + Bhgt)
+	T:SetTexCoord(TLx, TLy, BLx, BLy, TRx, TRy, BRx, BRy)
+	T:Show()
+end
 
-	local buffLines = {}
-	for key, label in pairs(BUFF_LABELS) do
-		local left_ = game:BuffLeft(key)
-		if left_ > 0 then
-			local buff = game.buffs[key]
-			local text = label
-			if key == "special" and buff then
-				local b = NS.BUILDING_BY_ID[buff.building]
-				text = string.format("%s special x%d", b and b.name or "Building", math.floor(buff.mult))
-			end
-			table.insert(buffLines, string.format("%s: %d s", text, math.ceil(left_)))
-		end
+function UI:OnBuffsChanged()
+	if self.frame and self.frame:IsShown() then
+		self:RefreshLeft()
 	end
-	table.sort(buffLines)
-	left.Buff:SetText(table.concat(buffLines, "\n"))
+end
 
-	local store = self.store
-	SetSelected(store.BuyMode, self.mode == "buy")
-	SetSelected(store.SellMode, self.mode == "sell")
-	for i, amount in ipairs(AMOUNTS) do
-		SetSelected(store.Amounts[i], self.amount == amount)
+function UI:OnWrathChanged()
+	if self.frame and self.frame:IsShown() then
+		self:RefreshBackground()
+		self:RefreshRows(true)
 	end
-	local cookies = save.cookies
-	local stage = game:Stage()
-	for _, row in ipairs(store.Rows) do
-		local b = row.building
-		if game:IsRevealed(b) then
-			local owned = game:Count(b.id)
-			local iconKey = "building_" .. b.id
-			if b.id == "grandma" and stage > 0 then
-				iconKey = "grandma_" .. stage
-			end
-			if row.iconKey ~= iconKey then
-				row.iconKey = iconKey
-				row.Icon:SetTexture(NS.Art(iconKey))
-				row.Icon:SetTexCoord(0, 1, 0, 1)
-			end
-			row.Owned:SetText(owned > 0 and tostring(owned) or "")
-			if self.mode == "sell" then
-				local n = math.min(self.amount, owned)
-				row.Price:SetText(n > 0 and ("sell " .. n .. " for " .. NS.Beautify(game:SellPriceFor(b, n), true)) or "none to sell")
-				if n > 0 then
-					row.Name:SetTextColor(1, 0.7, 0.3)
-					row.Price:SetTextColor(1, 0.8, 0.4)
-					row.Icon:SetDesaturated(false)
-				else
-					row.Name:SetTextColor(0.6, 0.55, 0.45)
-					row.Price:SetTextColor(0.6, 0.55, 0.45)
-					row.Icon:SetDesaturated(true)
-				end
-			else
-				local price = game:PriceFor(b, self.amount)
-				row.Price:SetText(NS.Beautify(price, true))
-				if cookies >= price then
-					row.Name:SetTextColor(1, 0.82, 0)
-					row.Price:SetTextColor(0.45, 1, 0.45)
-					row.Icon:SetDesaturated(false)
-				else
-					row.Name:SetTextColor(0.6, 0.55, 0.45)
-					row.Price:SetTextColor(1, 0.45, 0.45)
-					row.Icon:SetDesaturated(true)
-				end
-			end
-			row:Show()
-		else
-			row:Hide()
-		end
-	end
+end
 
-	local right = self.right
-	if force or self.upgradeVersion ~= game.version or (GetTime() - (self.upgradeScan or 0)) > 2 then
-		self.upgradeVersion = game.version
-		self.upgradeScan = GetTime()
-		self.available = game:AvailableUpgrades()
-	end
-	local list = self.available or {}
-	for i, slot in ipairs(right.Slots) do
-		local u = list[i]
-		slot.upgrade = u
-		if u then
-			if u.icon then
-				SetCell(slot.Icon, u.icon)
-			else
-				slot.Icon:SetTexture(NS.Art("building_" .. (u.building or "cursor")))
-				slot.Icon:SetTexCoord(0, 1, 0, 1)
-			end
-			if cookies >= game:UpgradeCost(u) then
-				slot.Border:SetVertexColor(0.3, 0.9, 0.3, 1)
-				slot.Icon:SetDesaturated(false)
-			else
-				slot.Border:SetVertexColor(0.3, 0.3, 0.35, 1)
-				slot.Icon:SetDesaturated(true)
-			end
-			slot:Show()
-		else
-			slot:Hide()
+function UI:OnSeasonChanged()
+	if self.frame and self.frame:IsShown() then
+		self:RefreshBackground()
+		for me, b in pairs(self.shimmerButtons) do
+			self:ShimmerLook(b, me)
 		end
+		self:RefreshRows(true)
+		self:RebuildStore()
 	end
-	right.More:SetText(#list > MAX_UPGRADES and string.format("and %d more", #list - MAX_UPGRADES) or "")
-	right.Empty:SetShown(#list == 0)
+end
 
-	if self.stats:IsShown() then
-		self:RefreshStats()
-	end
-	if force then
-		if self.achievements:IsShown() then
-			self:RefreshAchievements()
-		end
-		if self.heaven:IsShown() then
-			self:RefreshHeaven()
-		end
+function UI:OnLumpsEnabled()
+	self:Refresh(true)
+end
+
+function UI:OnReset()
+	if self.frame then
+		self:RefreshWrinklers()
+		self:SyncShimmers()
+		self:RefreshBackground()
+		self:Refresh(true)
 	end
 end
 
 function UI:OnUpdate(dt)
+	local game = NS.Game
 	self.acc = (self.acc or 0) + dt
-	if self.acc >= REFRESH_INTERVAL then
+	if self.acc >= self.REFRESH_INTERVAL then
 		self.acc = 0
 		self:Refresh(false)
 	end
-
+	local t = GetTime()
 	local p = self.left
-	p.Cookie.Shine:SetRotation(GetTime() * 0.25)
-	p.milkOffset = (p.milkOffset + dt * 0.03) % 1
-	p.Milk:SetTexCoord(p.milkOffset, p.milkOffset + LEFT_W / 256, 0, MILK_H / 256)
-
-	self.tickerT = self.tickerT + dt
-	if self.tickerT >= TICKER_INTERVAL then
-		self.tickerT = 0
-		self.frame.Ticker:SetText(NS.Game:TickerLine())
-	end
-
-	for i = #self.floats, 1, -1 do
-		local fs = self.floats[i]
-		fs.t = fs.t + dt / 0.8
-		if fs.t >= 1 then
-			fs:Hide()
-			table.remove(self.floats, i)
-			table.insert(self.floatPool, fs)
-		else
-			fs:SetPoint("CENTER", self.left, "BOTTOMLEFT", fs.x, fs.y0 + 34 * fs.t)
-			fs:SetAlpha(fs.t < 0.5 and 1 or (1 - (fs.t - 0.5) * 2))
-		end
-	end
-
-	if not self.bannerT and #self.banners > 0 then
-		p.Banner:SetText(table.remove(self.banners, 1))
-		p.Banner:SetTextColor(1, 0.85, 0.3)
-		p.Banner:SetAlpha(1)
-		p.Banner:Show()
-		self.bannerT = 0
-	end
-	if self.bannerT then
-		self.bannerT = self.bannerT + dt
-		local q = self.bannerT / 2.4
-		if q >= 1 then
-			p.Banner:Hide()
-			self.bannerT = nil
-		elseif q > 0.7 then
-			p.Banner:SetAlpha((1 - q) / 0.3)
-		end
-	end
-
-	local g = self.golden
-	if g:IsShown() then
-		g.t = (g.t or 0) + dt
-		local size = 54 + 6 * math.sin(g.t * 5)
-		g:SetSize(size, size)
-	end
-	for _, d in ipairs(self.drops) do
-		if d:IsShown() then
-			d.left = (d.left or 0) - dt
-			if d.left <= 0 then
-				d.value = nil
-				d:Hide()
-			else
-				d:SetAlpha(math.min(1, d.left))
-			end
-		end
+	-- The cookie's wobble and the shine.
+	local cookie = p.Cookie
+	local target = cookie.pressed and 0.96 or (cookie.hover and 1.03 or 1)
+	cookie.size = cookie.size + (target - cookie.size) * math.min(1, dt * 12)
+	cookie:SetSize(COOKIE_SIZE * cookie.size, COOKIE_SIZE * cookie.size)
+	cookie.Shine:SetRotation(t * 0.25)
+	cookie.Shine2:SetRotation(-t * 0.18)
+	-- Milk level and waves.
+	local milkH = math.min(1, game.milkProgress or 0) * 0.35
+	p.milkHd = p.milkHd + (milkH - p.milkHd) * math.min(1, dt * 0.6)
+	local height = math.max(1, p.milkHd * CONTENT_H)
+	p.Milk:SetHeight(height)
+	p.milkOffset = (p.milkOffset + dt * 0.02) % 1
+	p.Milk:SetTexCoord(p.milkOffset, p.milkOffset + LEFT_W / 256, 0, height / 256)
+	self:UpdateWrinklers(t)
+	self:UpdateShimmers(dt)
+	self:UpdateFloats(dt)
+	self:UpdateNotes(dt)
+	if self.UpdateAscend and self.ascend and self.ascend:IsShown() then
+		self:UpdateAscend(dt)
 	end
 end
 
@@ -1384,5 +1725,11 @@ function UI:Toggle()
 		self:Hide()
 	else
 		self:Show()
+	end
+end
+
+function UI:OnGuildDataChanged()
+	if self.frame and self.frame:IsShown() and self.menu == "guild" then
+		self:RefreshMenus(true)
 	end
 end

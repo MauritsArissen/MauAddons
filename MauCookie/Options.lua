@@ -1,5 +1,6 @@
 -- MauCookie options: a category in the game's Settings > AddOns panel.
--- /mck options opens it.  Same pattern as the other Mau addons.
+-- /mck options opens it; the Options button in the window edits the same
+-- settings.  Same pattern as the other Mau addons.
 
 local _, NS = ...
 
@@ -55,9 +56,11 @@ function Options:Register()
 	Header(layout, "Bakery")
 	Checkbox("sounds", "Sounds", "Clicks, purchases, golden cookies, achievements and ascension.")
 	Checkbox("popups", "Click popups", "A small +cookies text where you click the cookie.")
+	Checkbox("particles", "Fancy graphics", "Wobbling cookie, animated milk and shine.")
+	Checkbox("shortNumbers", "Short numbers", "1.5M instead of 1.5 million.")
 
 	Header(layout, "Window")
-	Slider("scale", "Window size", "Scale of the bakery window. Drag the window to move it.", Percent)
+	Slider("scale", "Window size", "Scale of the bakery window. Drag the title bar to move it.", Percent)
 
 	Header(layout, "Flying")
 	Checkbox("autoOpenTaxi", "Open the bakery on a flight path", "When you take a flight path the bakery opens by itself.")
@@ -83,6 +86,8 @@ function Options:OnChanged(key)
 			NS.Comm:Announce()
 		end
 		NS.UI:OnGuildDataChanged()
+	elseif key == "shortNumbers" then
+		NS.UI:Refresh(true)
 	end
 end
 

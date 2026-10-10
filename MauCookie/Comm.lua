@@ -100,9 +100,9 @@ function Comm:OwnRecord(ts)
 	local _, classFile = UnitClass("player")
 	return {
 		name = self.playerName, class = classFile, ts = ts or self.ownTs or 0,
-		prestige = save.prestige or 0, allTime = game:AllTime(), run = save.baked, cps = game:Cps(false),
-		buildings = game:TotalBuildings(), feats = game:AchievementsUnlocked(), golden = save.golden or 0,
-		ascensions = save.ascensions or 0,
+		prestige = save.prestige or 0, allTime = game:AllTime(), run = save.earned or 0, cps = game:Cps(),
+		buildings = game:TotalBuildings(), feats = game:AchievementsUnlocked(), golden = save.goldenClicks or 0,
+		ascensions = save.resets or 0,
 	}
 end
 
