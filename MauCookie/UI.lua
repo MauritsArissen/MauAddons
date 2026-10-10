@@ -1,6 +1,7 @@
--- MauCookie window: the cookie on the left, the store in the middle, the
--- upgrades on the right, overlays for statistics, achievements, heaven and
--- the guild board, and the golden cookie that pops up anywhere in the window.
+-- MauCookie window: the cookie on the left (on the blue background, with
+-- the rotating shine and the milk), the store in the middle, the upgrades
+-- on the right, overlays for statistics, achievements, heaven and the guild
+-- board, and the golden cookie that pops up anywhere in the window.
 
 local _, NS = ...
 
@@ -9,12 +10,13 @@ NS.UI = UI
 
 local PAD, TITLE_H = 16, 28
 local LEFT_W, STORE_W, RIGHT_W, GAP = 230, 300, 178, 10
-local PANEL_H = 480
+local PANEL_H = 560
 local COOKIE_SIZE = 170
-local ROW_H = 32
+local ROW_H = 26
 local UPGRADE_SIZE, UPGRADE_GAP, UPGRADE_COLS = 36, 4, 4
-local MAX_UPGRADES = 28
+local MAX_UPGRADES = 40
 local BOARD_ROWS = 16
+local MILK_H = 50
 local WHITE = "Interface\\Buttons\\WHITE8X8"
 local MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 local FONT = STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
@@ -86,6 +88,23 @@ local function RoundIcon(parent, layer)
 	return tex
 end
 
+-- A tiled background from the Textures folder.
+local function Tiled(parent, key, layer)
+	local tex = parent:CreateTexture(nil, layer or "BACKGROUND")
+	tex:SetAllPoints()
+	tex:SetTexture(NS.Art(key), "REPEAT", "REPEAT")
+	tex:SetHorizTile(true)
+	tex:SetVertTile(true)
+	return tex
+end
+
+-- An icon-sheet cell on a texture.
+local function SetCell(tex, cell)
+	local inset = NS.ICON_INSET
+	tex:SetTexture(NS.Icon(cell))
+	tex:SetTexCoord(inset, 1 - inset, inset, 1 - inset)
+end
+
 local function Ago(seconds)
 	if seconds < 60 then
 		return "just now"
@@ -152,6 +171,7 @@ function UI:Create()
 	end)
 	f:SetScript("OnHide", function()
 		GameTooltip:Hide()
+		UI.autoOpened = nil
 	end)
 	f:SetScript("OnUpdate", function(_, elapsed)
 		NS.Guard("window", UI.OnUpdate, UI, elapsed)
@@ -164,7 +184,6 @@ function UI:Create()
 	return f
 end
 
--- The images in Textures\ (cookie, golden cookie, building icons).
 function UI:ApplyArt()
 	if not self.frame then
 		return
@@ -174,7 +193,6 @@ function UI:ApplyArt()
 	cookie.Icon:SetTexCoord(0, 1, 0, 1)
 	self.golden.Icon:SetTexture(NS.Art("golden"))
 	self.golden.Icon:SetTexCoord(0, 1, 0, 1)
-	self.golden.Icon:SetVertexColor(1, 1, 1)
 	for _, row in ipairs(self.store.Rows) do
 		row.Icon:SetTexture(NS.Art("building_" .. row.building.id))
 		row.Icon:SetTexCoord(0, 1, 0, 1)
@@ -190,31 +208,32 @@ function UI:CreateLeft(f, top)
 	p:SetSize(LEFT_W, PANEL_H)
 	p:SetPoint("TOPLEFT", PAD, top)
 	self.left = p
+	p.Bg = Tiled(p, "bgBlue", "BACKGROUND")
 
 	p.Count = Label(p, "", "GameFontNormalLarge")
-	p.Count:SetPoint("TOP", 0, -4)
+	p.Count:SetPoint("TOP", 0, -6)
 	p.Count:SetJustifyH("CENTER")
 	p.Count:SetWidth(LEFT_W)
 	p.Cps = Label(p, "", "GameFontHighlightSmall")
-	p.Cps:SetPoint("TOP", 0, -26)
+	p.Cps:SetPoint("TOP", 0, -28)
 	p.Cps:SetJustifyH("CENTER")
 	p.Cps:SetWidth(LEFT_W)
 
 	local cookie = CreateFrame("Button", nil, p)
 	cookie:SetSize(COOKIE_SIZE, COOKIE_SIZE)
-	cookie:SetPoint("TOP", 0, -56)
-	cookie.Glow = RoundIcon(cookie, "BACKGROUND")
-	cookie.Glow:SetTexture(WHITE)
-	cookie.Glow:SetBlendMode("ADD")
-	cookie.Glow:SetVertexColor(1, 0.8, 0.4, 0.18)
-	cookie.Glow:SetPoint("CENTER")
-	cookie.Glow:SetSize(COOKIE_SIZE + 30, COOKIE_SIZE + 30)
+	cookie:SetPoint("TOP", 0, -62)
+	cookie.Shine = cookie:CreateTexture(nil, "BACKGROUND")
+	cookie.Shine:SetTexture(NS.Art("shine"))
+	cookie.Shine:SetBlendMode("ADD")
+	cookie.Shine:SetAlpha(0.55)
+	cookie.Shine:SetPoint("CENTER")
+	cookie.Shine:SetSize(COOKIE_SIZE * 1.9, COOKIE_SIZE * 1.9)
 	cookie.Icon = RoundIcon(cookie, "ARTWORK")
 	cookie.Icon:SetAllPoints()
 	cookie.Highlight = RoundIcon(cookie, "HIGHLIGHT")
 	cookie.Highlight:SetTexture(WHITE)
 	cookie.Highlight:SetAllPoints()
-	cookie.Highlight:SetVertexColor(1, 1, 1, 0.12)
+	cookie.Highlight:SetVertexColor(1, 1, 1, 0.1)
 	cookie:RegisterForClicks("LeftButtonDown")
 	cookie:SetScript("OnClick", function()
 		NS.Game:Click()
@@ -228,8 +247,7 @@ function UI:CreateLeft(f, top)
 	Tooltip(cookie, "The cookie", "Click it. A key can be bound to clicking under Options > Key Bindings > AddOns.")
 	p.Cookie = cookie
 
-	-- The "+cookies" texts live on a frame above the cookie button, else the
-	-- cookie would draw over them.
+	-- The "+cookies" texts live on a frame above the cookie button.
 	p.FloatLayer = CreateFrame("Frame", nil, p)
 	p.FloatLayer:SetAllPoints()
 	p.FloatLayer:SetFrameLevel(cookie:GetFrameLevel() + 2)
@@ -245,26 +263,39 @@ function UI:CreateLeft(f, top)
 	p.Buff2:SetWidth(LEFT_W)
 	p.Buff2:SetTextColor(0.7, 0.9, 1)
 
+	-- Milk along the bottom, drifting slowly.
+	p.Milk = p:CreateTexture(nil, "BORDER")
+	p.Milk:SetTexture(NS.Art("milk"), "REPEAT", "REPEAT")
+	p.Milk:SetHorizTile(true)
+	p.Milk:SetPoint("BOTTOMLEFT")
+	p.Milk:SetPoint("BOTTOMRIGHT")
+	p.Milk:SetHeight(MILK_H)
+	p.Milk:SetAlpha(0.9)
+	p.milkOffset = 0
+
 	p.Banner = p:CreateFontString(nil, "OVERLAY")
 	p.Banner:SetFont(FONT, 15, "OUTLINE")
-	p.Banner:SetPoint("BOTTOM", 0, 60)
+	p.Banner:SetPoint("BOTTOM", 0, MILK_H + 60)
 	p.Banner:SetWidth(LEFT_W)
 	p.Banner:SetJustifyH("CENTER")
 	p.Banner:SetWordWrap(true)
 	p.Banner:Hide()
 
-	p.Prestige = Label(p, "", "GameFontDisableSmall")
-	p.Prestige:SetPoint("BOTTOM", 0, 34)
+	p.Prestige = Label(p, "", "GameFontHighlightSmall")
+	p.Prestige:SetPoint("BOTTOM", 0, MILK_H + 34)
 	p.Prestige:SetJustifyH("CENTER")
 	p.Prestige:SetWidth(LEFT_W)
-	p.Baked = Label(p, "", "GameFontDisableSmall")
-	p.Baked:SetPoint("BOTTOM", 0, 20)
+	p.Baked = Label(p, "", "GameFontHighlightSmall")
+	p.Baked:SetPoint("BOTTOM", 0, MILK_H + 20)
 	p.Baked:SetJustifyH("CENTER")
 	p.Baked:SetWidth(LEFT_W)
-	p.Hint = Label(p, "", "GameFontDisableSmall")
-	p.Hint:SetPoint("BOTTOM", 0, 4)
+	p.Hint = Label(p, "", "GameFontHighlightSmall")
+	p.Hint:SetPoint("BOTTOM", 0, MILK_H + 6)
 	p.Hint:SetJustifyH("CENTER")
 	p.Hint:SetWidth(LEFT_W)
+	for _, fs in ipairs({ p.Prestige, p.Baked, p.Hint }) do
+		fs:SetTextColor(0.8, 0.85, 1)
+	end
 
 	self.floats, self.floatPool = {}, {}
 	self.banners = {}
@@ -279,33 +310,34 @@ function UI:CreateStore(f, top)
 	p:SetSize(STORE_W, PANEL_H)
 	p:SetPoint("TOPLEFT", PAD + LEFT_W + GAP, top)
 	self.store = p
+	p.Bg = Tiled(p, "storeTile", "BACKGROUND")
 	p.Header = Label(p, "Store", "GameFontNormal")
-	p.Header:SetPoint("TOPLEFT", 4, 0)
+	p.Header:SetPoint("TOPLEFT", 4, -2)
 	p.HeaderHint = Label(p, "click: buy 1, shift: buy 10", "GameFontDisableSmall")
-	p.HeaderHint:SetPoint("TOPRIGHT", -4, -2)
+	p.HeaderHint:SetPoint("TOPRIGHT", -4, -4)
 	p.HeaderHint:SetJustifyH("RIGHT")
 	p.Rows = {}
 	for i, b in ipairs(NS.BUILDINGS) do
 		local row = CreateFrame("Button", nil, p)
-		row:SetSize(STORE_W, ROW_H - 2)
+		row:SetSize(STORE_W, ROW_H - 1)
 		row:SetPoint("TOPLEFT", 0, -22 - (i - 1) * ROW_H)
 		row.Bg = row:CreateTexture(nil, "BACKGROUND")
 		row.Bg:SetTexture(WHITE)
 		row.Bg:SetAllPoints()
-		row.Bg:SetVertexColor(1, 1, 1, 0.05)
+		row.Bg:SetVertexColor(0, 0, 0, 0.35)
 		row:SetHighlightTexture(WHITE)
 		row:GetHighlightTexture():SetVertexColor(1, 1, 1, 0.08)
 		row.Icon = row:CreateTexture(nil, "ARTWORK")
-		row.Icon:SetSize(26, 26)
+		row.Icon:SetSize(22, 22)
 		row.Icon:SetPoint("LEFT", 3, 0)
-		row.Name = Label(row, b.name, "GameFontNormal")
-		row.Name:SetPoint("TOPLEFT", 36, -2)
+		row.Name = Label(row, b.name, "GameFontNormalSmall")
+		row.Name:SetPoint("TOPLEFT", 30, -1)
 		row.Price = Label(row, "", "GameFontHighlightSmall")
-		row.Price:SetPoint("BOTTOMLEFT", 36, 2)
-		row.Owned = Label(row, "", "GameFontNormalLarge")
+		row.Price:SetPoint("BOTTOMLEFT", 30, 1)
+		row.Owned = Label(row, "", "GameFontNormal")
 		row.Owned:SetPoint("RIGHT", -8, 0)
 		row.Owned:SetJustifyH("RIGHT")
-		row.Owned:SetTextColor(0.55, 0.55, 0.6)
+		row.Owned:SetTextColor(0.7, 0.7, 0.75)
 		row.building = b
 		row:RegisterForClicks("LeftButtonUp")
 		row:SetScript("OnClick", function(self)
@@ -350,8 +382,9 @@ function UI:CreateRight(f, top)
 	p:SetSize(RIGHT_W, PANEL_H)
 	p:SetPoint("TOPLEFT", PAD + LEFT_W + GAP + STORE_W + GAP, top)
 	self.right = p
+	p.Bg = Tiled(p, "storeTile", "BACKGROUND")
 	p.Header = Label(p, "Upgrades", "GameFontNormal")
-	p.Header:SetPoint("TOPLEFT", 4, 0)
+	p.Header:SetPoint("TOPLEFT", 4, -2)
 	p.Slots = {}
 	for i = 1, MAX_UPGRADES do
 		local slot = CreateFrame("Button", nil, p)
@@ -364,7 +397,6 @@ function UI:CreateRight(f, top)
 		slot.Icon = slot:CreateTexture(nil, "ARTWORK")
 		slot.Icon:SetPoint("TOPLEFT", 2, -2)
 		slot.Icon:SetPoint("BOTTOMRIGHT", -2, 2)
-		slot.Icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
 		slot:SetHighlightTexture(WHITE)
 		slot:GetHighlightTexture():SetVertexColor(1, 1, 1, 0.15)
 		slot:RegisterForClicks("LeftButtonUp")
@@ -406,7 +438,7 @@ function UI:CreateRight(f, top)
 		UI:ShowAchievements()
 	end)
 	p.Achievements:SetPoint("BOTTOMRIGHT", 0, 24)
-	Tooltip(p.Achievements, "Achievements", "Every achievement adds 1% to production.")
+	Tooltip(p.Achievements, "Achievements", "Every achievement adds 1% to production and 4% milk for the kittens.")
 	p.Heaven = Button(p, "Heaven", 86, 20, function()
 		UI:ShowHeaven()
 	end)
@@ -427,9 +459,11 @@ end
 -- Overlays over the store and upgrades
 -------------------------------------------------------------------------------
 
+local OVERLAY_W = STORE_W + GAP + RIGHT_W
+
 local function Overlay(f, top)
 	local o = CreateFrame("Frame", nil, f, "BackdropTemplate")
-	o:SetSize(STORE_W + GAP + RIGHT_W, PANEL_H)
+	o:SetSize(OVERLAY_W, PANEL_H)
 	o:SetPoint("TOPLEFT", PAD + LEFT_W + GAP, top)
 	o:SetFrameLevel(f:GetFrameLevel() + 10)
 	o:EnableMouse(true)
@@ -438,8 +472,6 @@ local function Overlay(f, top)
 	o:Hide()
 	return o
 end
-
-local OVERLAY_W = STORE_W + GAP + RIGHT_W
 
 function UI:CreateOverlays(f, top)
 	self:CreateStats(f, top)
@@ -454,7 +486,7 @@ function UI:CreateStats(f, top)
 	s.Title = Label(s, "Statistics", "GameFontNormalLarge")
 	s.Title:SetPoint("TOPLEFT", 12, -8)
 	s.Rows = {}
-	for i = 1, 18 do
+	for i = 1, 20 do
 		local row = CreateFrame("Frame", nil, s)
 		row:SetSize(OVERLAY_W - 24, 19)
 		row:SetPoint("TOPLEFT", 12, -36 - (i - 1) * 19)
@@ -487,7 +519,7 @@ function UI:CreateAchievements(f, top)
 	a.Summary = Label(a, "", "GameFontHighlightSmall")
 	a.Summary:SetPoint("LEFT", a.Title, "RIGHT", 12, 0)
 	a.Rows = {}
-	local perColumn = 24
+	local perColumn = 28
 	local colW = (OVERLAY_W - 24) / 2
 	for i, ach in ipairs(NS.ACHIEVEMENTS) do
 		local row = CreateFrame("Frame", nil, a)
@@ -504,7 +536,7 @@ function UI:CreateAchievements(f, top)
 			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 			GameTooltip:SetText(self.ach.name)
 			GameTooltip:AddLine(self.ach.desc, 1, 1, 1, true)
-			GameTooltip:AddLine(NS.Game.save.achievements[self.ach.id] and "Unlocked. Production +1%." or "Locked.", 0.6, 0.6, 0.6)
+			GameTooltip:AddLine(NS.Game.save.achievements[self.ach.id] and "Unlocked. Production +1%, milk +4%." or "Locked.", 0.6, 0.6, 0.6)
 			GameTooltip:Show()
 		end)
 		row:SetScript("OnLeave", function()
@@ -548,10 +580,14 @@ function UI:CreateHeaven(f, top)
 		row.Bg:SetTexture(WHITE)
 		row.Bg:SetAllPoints()
 		row.Bg:SetVertexColor(1, 1, 1, 0.04)
+		row.Icon = row:CreateTexture(nil, "ARTWORK")
+		row.Icon:SetSize(32, 32)
+		row.Icon:SetPoint("LEFT", 6, 0)
+		SetCell(row.Icon, item.icon)
 		row.Name = Label(row, item.name, "GameFontNormal")
-		row.Name:SetPoint("TOPLEFT", 6, -4)
+		row.Name:SetPoint("TOPLEFT", 46, -4)
 		row.Desc = Label(row, item.desc, "GameFontHighlightSmall")
-		row.Desc:SetPoint("BOTTOMLEFT", 6, 4)
+		row.Desc:SetPoint("BOTTOMLEFT", 46, 4)
 		row.Cost = Label(row, string.format("%d chip%s", item.cost, item.cost == 1 and "" or "s"), "GameFontHighlightSmall")
 		row.Cost:SetPoint("RIGHT", -84, 0)
 		row.Cost:SetJustifyH("RIGHT")
@@ -699,6 +735,7 @@ function UI:RefreshStats()
 		{ "Buildings owned", NS.Commas(game:TotalBuildings()) },
 		{ "Upgrades bought", string.format("%d of %d", game:UpgradesBought(), #NS.UPGRADES) },
 		{ "Achievements", string.format("%d of %d (production +%d%%)", unlocked, #NS.ACHIEVEMENTS, unlocked) },
+		{ "Milk", string.format("%d%% (kittens: production x%.2f)", game:Milk() * 100, game:KittenMult()) },
 		{ "Golden cookies clicked", NS.Commas(save.golden) },
 		{ "Flavour bonus", string.format("+%d%%", game:CountKind("flavour") * 2) },
 		{ "Prestige level", string.format("%d (production +%d%%)", save.prestige or 0, save.prestige or 0) },
@@ -731,7 +768,7 @@ function UI:RefreshAchievements()
 			row.Name:SetTextColor(0.45, 0.45, 0.5)
 		end
 	end
-	a.Summary:SetText(string.format("%d of %d unlocked, production +%d%%", unlocked, #NS.ACHIEVEMENTS, unlocked))
+	a.Summary:SetText(string.format("%d of %d unlocked, production +%d%%, milk %d%%", unlocked, #NS.ACHIEVEMENTS, unlocked, unlocked * 4))
 end
 
 function UI:RefreshHeaven()
@@ -844,7 +881,7 @@ function UI:CreateGolden(f)
 	g.Glow:SetVertexColor(1, 0.85, 0.3, 0.5)
 	g.Glow:SetPoint("CENTER")
 	g.Glow:SetSize(84, 84)
-	g.Icon = RoundIcon(g, "ARTWORK")
+	g.Icon = g:CreateTexture(nil, "ARTWORK")
 	g.Icon:SetAllPoints()
 	g:RegisterForClicks("LeftButtonDown")
 	g:SetScript("OnClick", function()
@@ -957,7 +994,7 @@ function UI:Refresh(force)
 				row.Price:SetTextColor(0.45, 1, 0.45)
 				row.Icon:SetDesaturated(false)
 			else
-				row.Name:SetTextColor(0.55, 0.5, 0.4)
+				row.Name:SetTextColor(0.6, 0.55, 0.45)
 				row.Price:SetTextColor(1, 0.45, 0.45)
 				row.Icon:SetDesaturated(true)
 			end
@@ -978,12 +1015,11 @@ function UI:Refresh(force)
 		local u = list[i]
 		slot.upgrade = u
 		if u then
-			if u.kind == "building" then
+			if u.icon then
+				SetCell(slot.Icon, u.icon)
+			elseif u.kind == "building" then
 				slot.Icon:SetTexture(NS.Art("building_" .. u.building))
 				slot.Icon:SetTexCoord(0, 1, 0, 1)
-			else
-				slot.Icon:SetTexture(u.iconPath)
-				slot.Icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
 			end
 			if cookies >= u.cost then
 				slot.Border:SetVertexColor(0.3, 0.9, 0.3, 1)
@@ -1020,6 +1056,11 @@ function UI:OnUpdate(dt)
 		self:Refresh(false)
 	end
 
+	local p = self.left
+	p.Cookie.Shine:SetRotation(GetTime() * 0.25)
+	p.milkOffset = (p.milkOffset + dt * 0.03) % 1
+	p.Milk:SetTexCoord(p.milkOffset, p.milkOffset + LEFT_W / 256, 0, MILK_H / 256)
+
 	for i = #self.floats, 1, -1 do
 		local fs = self.floats[i]
 		fs.t = fs.t + dt / 0.8
@@ -1033,7 +1074,6 @@ function UI:OnUpdate(dt)
 		end
 	end
 
-	local p = self.left
 	if not self.bannerT and #self.banners > 0 then
 		p.Banner:SetText(table.remove(self.banners, 1))
 		p.Banner:SetTextColor(1, 0.85, 0.3)

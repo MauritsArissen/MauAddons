@@ -94,8 +94,24 @@ function Game:AllTime()
 	return (self.save.allTime or 0) + self.save.baked
 end
 
+-- Milk: 4% per achievement; kittens turn it into production.
+function Game:Milk()
+	return 0.04 * self:AchievementsUnlocked()
+end
+
+function Game:KittenMult()
+	local milk = self:Milk()
+	local mult = 1
+	for _, u in ipairs(NS.UPGRADES) do
+		if u.kind == "kitten" and self:HasUpgrade(u.id) then
+			mult = mult * (1 + milk * u.factor)
+		end
+	end
+	return mult
+end
+
 function Game:GlobalMult()
-	local mult = (1 + 0.02 * self:CountKind("flavour")) * (1 + 0.01 * self:AchievementsUnlocked())
+	local mult = (1 + 0.02 * self:CountKind("flavour")) * (1 + 0.01 * self:AchievementsUnlocked()) * self:KittenMult()
 	mult = mult * (1 + 0.01 * (self.save.prestige or 0))
 	if self:HasHeavenly("heavenlycookies") then
 		mult = mult * 1.1
@@ -210,7 +226,7 @@ end
 function Game:UpgradeUnlocked(u)
 	if u.kind == "building" then
 		return self:Count(u.building) >= u.requires
-	elseif u.kind == "luck" then
+	elseif u.requiresGolden then
 		return self.save.golden >= u.requiresGolden
 	end
 	return self.save.baked >= (u.unlockBaked or 0)
@@ -328,6 +344,9 @@ function Game:RollGolden()
 end
 
 function Game:AddBuff(key, duration, label)
+	if self:HasUpgrade("luck3") then
+		duration = duration * 2
+	end
 	self.buffs[key] = { ends = GetTime() + duration, label = label, duration = duration }
 end
 
@@ -410,6 +429,31 @@ function Game:Tick(dt)
 		self.achAcc = 0
 		self:CheckAchievements()
 	end
+
+	self.flightAcc = (self.flightAcc or 0) + dt
+	if self.flightAcc >= 0.5 then
+		self.flightAcc = 0
+		self:CheckFlight()
+	end
+end
+
+-- Open the bakery when a flight path or mounted flight starts, close it
+-- again when it ends if it opened itself.
+function Game:CheckFlight()
+	local s = NS.GetSettings()
+	local inFlight = (s.autoOpenTaxi and UnitOnTaxi("player")) or (s.autoOpenFlying and IsFlying and IsFlying()) or false
+	if inFlight and not self.wasInFlight then
+		if not NS.UI:IsShown() then
+			NS.UI:Show()
+			NS.UI.autoOpened = true
+		end
+	elseif not inFlight and self.wasInFlight then
+		if s.autoClose and NS.UI.autoOpened and NS.UI:IsShown() then
+			NS.UI:Hide()
+		end
+		NS.UI.autoOpened = nil
+	end
+	self.wasInFlight = inFlight
 end
 
 function Game:CheckAchievements()

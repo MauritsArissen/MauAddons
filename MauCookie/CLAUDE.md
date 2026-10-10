@@ -10,12 +10,13 @@ A Cookie Clicker homage built 2026-10-09 on the user's request. Click the cookie
 
 | File | Role |
 |---|---|
-| `MauCookie.toc` | Load order: MauCookie.lua, Data.lua, Game.lua, Comm.lua, UI.lua, Options.lua. |
-| `MauCookie.lua` | Namespace `NS` (`_G.MauCookie`), `NS.DEFAULTS` (`sounds`, `popups`, `shareScores`, `scale`), constants (`PRICE_GROWTH` 1.15, `PRESTIGE_BASE` 1e10, `ART_ROOT`), helpers (`Print`, `Guard`, `PlayKit`, `Clamp`, `Now`, `Commas`, `Beautify`, `BeautifyRate`, `FormatDuration`, `ShortName`, `ClassColor`, `Art`), `NewSave`, `InitDB`, events (`PLAYER_LOGIN` → `Game:Start`, `Comm:Start`), `/mck`, binding names, compartment function. |
-| `Data.lua` | `NS.BUILDINGS` (14), `NS.UPGRADES` (5 tiers × 14, 5 mice, 12 flavours, 2 luck), `NS.HEAVENLY` (5), `NS.ACHIEVEMENTS` (46: baked, cps, handmade, buildings, grandmas/cursors, golden, upgrades, ascensions) with lookup tables. |
-| `Game.lua` | `NS.Game`: `Start` (ticker), `Tick(dt)`, `Cps`, `BuildingCps`, `GlobalMult`, `ClickPower`, `Click`, `Price`/`PriceFor`/`Buy`, `IsRevealed`, upgrades, `Changed` (version bump, UI refresh, Comm), ascension (`PrestigeFor`, `AscendPreview`, `CookiesToNextChip`, `Ascend`, `BuyHeavenly`), golden cookies, buffs, `CheckAchievements`, `Wipe`. |
+| `MauCookie.toc` | Load order: MauCookie.lua, Data.lua, Game.lua, Comm.lua, UI.lua, Minimap.lua, Options.lua. |
+| `MauCookie.lua` | Namespace `NS` (`_G.MauCookie`), `NS.DEFAULTS` (`sounds`, `popups`, `shareScores`, `autoOpenTaxi`, `autoOpenFlying`, `autoClose`, `minimapButton`, `minimapAngle`, `scale`), constants (`PRICE_GROWTH` 1.15, `PRESTIGE_BASE` 1e10, `ART_ROOT`), helpers (`Print`, `Guard`, `PlayKit`, `Clamp`, `Now`, `Commas`, `Beautify`, `BeautifyRate`, `FormatDuration`, `ShortName`, `ClassColor`, `Art`, `Icon`, `ICON_INSET`), `NewSave`, `InitDB`, events (`PLAYER_LOGIN` → `Game:Start`, `Comm:Start`), `/mck`, binding names, compartment function. |
+| `Data.lua` | `NS.BUILDINGS` (20, each with `col` = its column in the icon sheet), `NS.UPGRADES` (5 tiers × 20, 5 mice, 12 flavours, 8 kittens, 3 luck) each with `icon = {col, row}`, `NS.HEAVENLY` (5, with icons), `NS.ACHIEVEMENTS` (55) with lookup tables. |
+| `Game.lua` | `NS.Game`: `Start` (ticker), `Tick(dt)`, `Cps`, `BuildingCps`, `GlobalMult`, `ClickPower`, `Click`, `Price`/`PriceFor`/`Buy`, `IsRevealed`, upgrades, `Changed` (version bump, UI refresh, Comm), ascension (`PrestigeFor`, `AscendPreview`, `CookiesToNextChip`, `Ascend`, `BuyHeavenly`), golden cookies, buffs, `CheckAchievements`, `Wipe`, `Milk`/`KittenMult`, `CheckFlight` (auto-open). |
 | `Comm.lua` | `NS.Comm`: the guild board (section 5), `NS.BOARDS`. |
 | `UI.lua` | `NS.UI`: window `MauCookieFrame`, left panel, store rows, upgrade grid, four buttons, overlays `stats`, `achievements`, `heaven`, `guild`, golden cookie, `ApplyArt`, `Refresh(force)` at 10 Hz. |
+| `Minimap.lua` | `NS.Minimap`: the cookie button on the minimap rim (`Create`, `Position` from `minimapAngle`, `Apply`); drag moves it. |
 | `Options.lua` | Settings > AddOns category. |
 | `Bindings.xml` | `MAUCOOKIE_TOGGLE`, `MAUCOOKIE_CLICK`; packed by `build.ps1`. |
 
@@ -23,13 +24,13 @@ Save (`MauCookieDB.save`): `cookies`, `baked` (this run), `clicks`, `handmade`, 
 
 ## 3. Rules
 
-- Production per second: Σ count × `b.cps` × 2^(tiers bought) × `GlobalMult`, with `GlobalMult = (1 + 0.02 × flavours) × (1 + 0.01 × achievements) × (1 + 0.01 × prestige) × 1.1 if Heavenly cookies × 1.25 if Heavenly key`; times 7 during Frenzy. Click power: `(2^cursorTiers + Cps(true) × 0.01 × mice) × GlobalMult`, times 777 during Click Frenzy.
+- Production per second: Σ count × `b.cps` × 2^(tiers bought) × `GlobalMult`, with `GlobalMult = (1 + 0.02 × flavours) × (1 + 0.01 × achievements) × KittenMult × (1 + 0.01 × prestige) × 1.1 if Heavenly cookies × 1.25 if Heavenly key`; `Milk = 0.04 × achievements`, `KittenMult = Π (1 + milk × factor)` over owned kittens (factors 0.1 … 0.2); times 7 during Frenzy. "Get lucky" (`luck3`, kind `lucklong`) doubles buff durations in `AddBuff`; any upgrade with `requiresGolden` unlocks by golden cookies clicked. Click power: `(2^cursorTiers + Cps(true) × 0.01 × mice) × GlobalMult`, times 777 during Click Frenzy.
 - Prices `floor(base × 1.15^owned)`; `Buy(b, n)` buys as many as affordable (shift = 10). Buildings show two past the highest owned.
 - Upgrades: building tier k at 1/5/25/50/100 owned, cost base × 10/50/500/5000/50000; mice and flavours at `cost / 10` baked this run; luck at 7 / 27 golden clicks. Grid shows available ones cheapest first, 28 max.
 - Golden cookie: next in 120–360 s ÷ 2^(luck upgrades + Heavenly luck), counted only while the window is shown, 13 s on screen. 8% Click Frenzy, 47% Frenzy, else Lucky `min(bank × 0.15, cps × 900) + 13`.
 - Ascension: prestige level = `floor((allTime / 1e10)^(1/3))`; `Ascend` requires at least one new chip, moves `baked` into `allTime`, sets `prestige`, adds the chips, resets cookies/buildings/upgrades, applies starter kits, bumps `ascensions`. Heavenly upgrades cost chips and persist. `Wipe` resets everything including prestige and heavenly upgrades.
 - `Game:Changed()` is the single hook after purchases, achievements, ascension and wipe: bumps `version` (upgrade grid rescan), refreshes the window, tells Comm.
-- The ticker frame is never hidden; `Tick` caps dt at 5 s, checks achievements once a second. No logout/login accounting at all.
+- The ticker frame is never hidden; `Tick` caps dt at 5 s, checks achievements once a second and `CheckFlight` twice a second: `UnitOnTaxi("player")` (option `autoOpenTaxi`) or `IsFlying()` (`autoOpenFlying`) starting opens the window and sets `UI.autoOpened`; the flight ending hides it again when `autoClose` and it opened itself. No logout/login accounting at all.
 
 ## 4. Art
 

@@ -59,6 +59,14 @@ function Options:Register()
 	Header(layout, "Window")
 	Slider("scale", "Window size", "Scale of the bakery window. Drag the window to move it.", Percent)
 
+	Header(layout, "Flying")
+	Checkbox("autoOpenTaxi", "Open the bakery on a flight path", "When you take a flight path the bakery opens by itself.")
+	Checkbox("autoOpenFlying", "Open the bakery when flying", "When you take off on a flying mount the bakery opens by itself.")
+	Checkbox("autoClose", "Close it again when the flight ends", "Only when the bakery opened itself for the flight.")
+
+	Header(layout, "Minimap")
+	Checkbox("minimapButton", "Minimap button", "The cookie on the minimap: click to open, drag to move.")
+
 	Header(layout, "Guild")
 	Checkbox("shareScores", "Share my bakery with the guild", "A snapshot of your bakery (cookies baked, per second, prestige, buildings, achievements) goes to guild members who use MauCookie, and you keep and pass on theirs. Nothing goes to guild chat.")
 
@@ -68,6 +76,8 @@ end
 function Options:OnChanged(key)
 	if key == "scale" then
 		NS.UI:ApplyScale()
+	elseif key == "minimapButton" then
+		NS.Minimap:Apply()
 	elseif key == "shareScores" then
 		if NS.GetSettings().shareScores then
 			NS.Comm:Announce()

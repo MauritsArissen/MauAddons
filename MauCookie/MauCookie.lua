@@ -20,6 +20,11 @@ NS.DEFAULTS = {
 	sounds = true,
 	popups = true,          -- "+1" texts on the cookie
 	shareScores = true,     -- guild board
+	autoOpenTaxi = true,    -- open the bakery when a flight path starts
+	autoOpenFlying = true,  -- and when flying on a mount
+	autoClose = true,       -- close it again when the flight ends (only if it opened itself)
+	minimapButton = true,
+	minimapAngle = 200,     -- degrees around the minimap
 	scale = 100,
 }
 
@@ -146,6 +151,13 @@ function NS.Art(key)
 	return NS.ART_ROOT .. key .. ".tga"
 end
 
+-- A cell of the original icon sheet, cut into Texturesicon_<col>_<row>.tga
+-- (48 px inside a 64 px square, so draw it with NS.ICON_INSET texcoords).
+NS.ICON_INSET = 8 / 64
+function NS.Icon(cell)
+	return NS.ART_ROOT .. "icon_" .. cell[1] .. "_" .. cell[2] .. ".tga"
+end
+
 -------------------------------------------------------------------------------
 -- Saved variables
 -------------------------------------------------------------------------------
@@ -204,6 +216,7 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
 		NS.InitDB()
 		NS.Game:Start()
 		NS.Comm:Start()
+		NS.Minimap:Create()
 		NS.Options:Register()
 	end
 end)
