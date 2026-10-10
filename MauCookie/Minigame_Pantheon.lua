@@ -94,6 +94,9 @@ function P:hasGod(key)
 end
 
 function P:godSlot(god)
+	if not self.state then
+		return 0
+	end
 	for i = 1, 3 do
 		if self.state.slot[i] == god.id then
 			return i
@@ -104,6 +107,9 @@ end
 
 function P:useSwap(n)
 	local st = self.state
+	if not st then
+		return
+	end
 	st.swapT = Game.save.runTime or 0
 	st.swaps = math.max(0, (st.swaps or 0) - n)
 end
@@ -111,6 +117,9 @@ end
 -- Put a god in a slot (0 = unslot), swapping with whoever was there.
 function P:slotGod(god, slot)
 	local st = self.state
+	if not st then
+		return false
+	end
 	local current = self:godSlot(god)
 	if slot == current then
 		return false
@@ -143,6 +152,9 @@ end
 -- Seconds until the next swap comes back (bakery time).
 function P:swapWait()
 	local st = self.state
+	if not st then
+		return 60 * 60
+	end
 	local t = 60 * 60
 	if st.swaps == 0 then t = 60 * 60 * 16 elseif st.swaps == 1 then t = 60 * 60 * 4 end
 	return t
@@ -187,13 +199,13 @@ function P:render(panel)
 		NS.SetIcon(c.Gem, self.slotGems[i])
 		c.Label:SetText(self.slotNames[i])
 		c:SetScript("OnClick", function(self)
-			local id = P.state.slot[self.slot]
+			local id = P.state and P.state.slot[self.slot] or 0
 			if id ~= 0 then
 				P:askSlot(P.gods[id])
 			end
 		end)
 		UI.SetTooltip(c, function(self)
-			local id = P.state.slot[self.slot]
+			local id = P.state and P.state.slot[self.slot] or 0
 			GameTooltip:SetText(P.slotNames[self.slot] .. " slot")
 			if id ~= 0 then
 				P:godTooltipLines(P.gods[id], self.slot)
@@ -207,8 +219,10 @@ function P:render(panel)
 	panel.Swaps:SetPoint("TOP", 0, -112)
 	panel.Swaps:SetJustifyH("CENTER")
 	panel.Refill = NS.Minigames:RefillButton(panel, "Click to refill all your worship swaps for 1 sugar lump.", function()
-		P.state.swaps = 3
-		P.state.swapT = Game.save.runTime or 0
+		if P.state then
+			P.state.swaps = 3
+			P.state.swapT = Game.save.runTime or 0
+		end
 	end)
 	panel.Refill:SetPoint("TOPRIGHT", -8, -28)
 	panel.Gods = {}
@@ -261,35 +275,48 @@ end
 
 function P:askSlot(god)
 	local st = self.state
+	if not st then
+		return
+	end
 	local current = self:godSlot(god)
-	local buttons = {}
+	local chosen = nil
+	local grid = {}
 	for i = 1, 3 do
 		if i ~= current then
-			table.insert(buttons, { self.slotNames[i], function()
-				if (st.swaps or 0) <= 0 then
-					NS.Notify("Pantheon", "No worship swaps left.", {23,18}, true)
-					return
-				end
-				P:useSwap(1)
-				P:slotGod(god, i)
-				NS.Minigames:Refresh()
+			table.insert(grid, { icon = self.slotGems[i], name = self.slotNames[i] .. " slot", onPick = function()
+				chosen = i
 			end })
 		end
 	end
+	local buttons = {
+		{ "Slot", function()
+			if not chosen then
+				return
+			end
+			if (st.swaps or 0) <= 0 then
+				NS.Notify("Pantheon", "No worship swaps left.", {23,18}, true)
+				return
+			end
+			P:useSwap(1)
+			P:slotGod(god, chosen)
+			NS.Minigames:Refresh()
+		end },
+	}
 	if current ~= 0 then
 		table.insert(buttons, { "Unslot", function()
 			P:slotGod(god, 0)
 			NS.Minigames:Refresh()
 		end })
 	end
-	while #buttons > 3 do
-		table.remove(buttons)
-	end
-	NS.UI:Prompt(god.name, string.format("Choose a slot for this spirit. Slotting uses one worship swap (%d left); unslotting is free.", st.swaps or 0), buttons)
+	table.insert(buttons, { "Cancel" })
+	NS.UI:Prompt(god.name, string.format("Pick a slot for this spirit, then press Slot. Slotting uses one worship swap (%d left); unslotting is free.", st.swaps or 0), buttons, grid)
 end
 
 function P:refresh(panel)
 	local st = self.state
+	if not st or not panel.Slots then
+		return
+	end
 	for i, c in ipairs(panel.Slots) do
 		local id = st.slot[i]
 		if id ~= 0 then

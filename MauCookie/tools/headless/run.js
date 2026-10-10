@@ -9,7 +9,7 @@ const L = lauxlib.luaL_newstate();
 lualib.luaL_openlibs(L);
 
 function runChunk(src, name, args) {
-  const status = lauxlib.luaL_loadbuffer(L, to_luastring(src), to_luastring(name));
+  const status = lauxlib.luaL_loadbuffer(L, to_luastring(src), to_luastring('@' + name));
   if (status !== lua.LUA_OK) {
     console.log('LOAD FAIL ' + name + ': ' + to_jsstring(lua.lua_tostring(L, -1)));
     process.exit(1);

@@ -78,9 +78,11 @@ local function Frame(kind)
 	return f
 end
 __Frame = Frame
+__frames = {}
 function CreateFrame(kind, name, parent)
 	local f = Frame(kind)
 	f.__parent = parent
+	table.insert(__frames, f)
 	if name then _G[name] = f end
 	return f
 end

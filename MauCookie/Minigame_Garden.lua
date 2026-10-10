@@ -9,7 +9,7 @@ local _, NS = ...
 local Game = NS.Game
 local Choose = NS.Choose
 
-local G = { building = "Farm", name = "Garden", height = 320 }
+local G = { building = "Farm", name = "Garden", height = 340 }
 
 -- key, name, icon row, cost (minutes of CpS), costM (minimum), ageTick, ageTickR, mature, children, flags, effects text, quote
 G.plants = {
@@ -110,6 +110,9 @@ function G:load(fresh)
 end
 
 function G:unlockedN()
+	if not self.state then
+		return 0
+	end
 	local n = 0
 	for _, p in ipairs(self.plants) do
 		if self.state.unlocked[p.key] then
@@ -362,6 +365,9 @@ function G:harvest(x, y)
 end
 
 function G:harvestAll(matureOnly)
+	if not self.state then
+		return
+	end
 	local harvested = 0
 	for _ = 1, 2 do
 		for y = 1, 6 do
@@ -388,7 +394,7 @@ end
 
 function G:clickTile(x, y)
 	local st = self.state
-	if not self:isTileUnlocked(x - 1, y - 1) then
+	if not st or not self:isTileUnlocked(x - 1, y - 1) then
 		return
 	end
 	if self:harvest(x, y) then
@@ -410,7 +416,7 @@ end
 function G:setSoil(id)
 	local st = self.state
 	local soil = self.soils[id]
-	if st.freeze or st.soil == id or st.nextSoil > Now() or Game:Count("Farm") < soil.req then
+	if not st or st.freeze or st.soil == id or st.nextSoil > Now() or Game:Count("Farm") < soil.req then
 		return false
 	end
 	st.nextSoil = Now() + (Game:Has("Turbo-charged soil") and 1 or 60 * 10)
@@ -422,6 +428,9 @@ end
 
 function G:toggleFreeze()
 	local st = self.state
+	if not st then
+		return
+	end
 	st.freeze = not st.freeze
 	if st.freeze then
 		for y = 1, 6 do
@@ -441,7 +450,7 @@ end
 
 function G:convert()
 	local st = self.state
-	if self:unlockedN() < #self.plants then
+	if not st or self:unlockedN() < #self.plants then
 		return false
 	end
 	self:harvestAll()
@@ -720,12 +729,12 @@ function G:render(panel)
 		end
 	end
 	panel.Plot = plot
-	-- Seeds.
+	-- Seeds: four columns of 24 px to the right of the plot.
 	panel.Seeds = {}
-	local sx, sy = 6 * TILE + 20, -30
+	local sx, sy = 6 * TILE + 16, -30
 	for i, p in ipairs(self.plants) do
 		local c = CreateFrame("Button", nil, panel)
-		c:SetSize(28, 28)
+		c:SetSize(22, 22)
 		c.plant = p
 		c.Icon = c:CreateTexture(nil, "ARTWORK")
 		c.Icon:SetAllPoints()
@@ -736,7 +745,7 @@ function G:render(panel)
 		c:SetHighlightTexture(UI.WHITE)
 		c:GetHighlightTexture():SetVertexColor(1, 1, 1, 0.15)
 		c:SetScript("OnClick", function(self)
-			if not self.plant.plantable or not G.state.unlocked[self.plant.key] then
+			if not G.state or not self.plant.plantable or not G.state.unlocked[self.plant.key] then
 				return
 			end
 			if G.seedSelected == self.plant.id then
@@ -781,7 +790,7 @@ function G:render(panel)
 				GameTooltip:AddLine("You can change soil again in " .. NS.FormatDuration(G.state.nextSoil - Now()) .. ".", 0.8, 0.8, 0.8)
 			end
 		end)
-		c:SetPoint("TOPLEFT", sx + (i - 1) * 30, -(6 * TILE + 36 - 48))
+		c:SetPoint("TOPLEFT", 8 + (i - 1) * 30, -(30 + 6 * TILE + 8))
 		panel.Soils[i] = c
 	end
 	-- Tools.
@@ -818,18 +827,20 @@ function G:render(panel)
 			GameTooltip:SetText(def[1])
 			GameTooltip:AddLine(def[3], 1, 1, 1, true)
 		end)
-		c:SetPoint("TOPLEFT", sx + 160 + (i - 1) * 30, -(6 * TILE + 36 - 48))
+		c:SetPoint("TOPLEFT", 8 + 160 + (i - 1) * 30, -(30 + 6 * TILE + 8))
 		panel.Tools[i] = c
 	end
 	panel.Refill = NS.Minigames:RefillButton(panel, "Click to refill your soil timer and trigger 1 plant growth tick with x3 spread and mutation rate for 1 sugar lump.", function()
-		G.state.loopsMult = 3
-		G.state.nextSoil = Now()
-		G.state.nextStep = Now()
+		if G.state then
+			G.state.loopsMult = 3
+			G.state.nextSoil = Now()
+			G.state.nextStep = Now()
+		end
 	end)
-	panel.Refill:SetPoint("TOPRIGHT", -8, -26)
+	panel.Refill:SetPoint("TOPRIGHT", -8, -2)
 	panel.Status = UI.Text(panel, 10, "OUTLINE")
-	panel.Status:SetPoint("BOTTOMLEFT", 8, 6)
-	panel.Status:SetWidth(panel:GetWidth() and panel:GetWidth() - 16 or 340)
+	panel.Status:SetPoint("BOTTOMLEFT", 8, 4)
+	panel.Status:SetWidth(350)
 	panel.Status:SetWordWrap(true)
 	panel.Status:SetTextColor(0.85, 0.85, 0.85)
 	panel.Note:SetText("")
@@ -838,6 +849,10 @@ end
 
 function G:seedTooltip(p)
 	local st = self.state
+	if not st then
+		GameTooltip:SetText(p.name)
+		return
+	end
 	local unlocked = st.unlocked[p.key]
 	GameTooltip:SetText(unlocked and p.name or "???")
 	if not unlocked then
@@ -873,6 +888,10 @@ end
 
 function G:tileTooltip(x, y)
 	local st = self.state
+	if not st then
+		GameTooltip:SetText("Garden")
+		return
+	end
 	if not self:isTileUnlocked(x - 1, y - 1) then
 		GameTooltip:SetText("Locked tile")
 		GameTooltip:AddLine("Level up your farms to expand the garden.", 0.8, 0.8, 0.8, true)
@@ -914,6 +933,9 @@ end
 
 function G:refresh(panel)
 	local st = self.state
+	if not st or not panel.Plot then
+		return
+	end
 	local soilIcon = math.min(3, self.soils[st.soil].icon)
 	for y = 1, 6 do
 		for x = 1, 6 do
@@ -944,9 +966,9 @@ function G:refresh(panel)
 	for i, c in ipairs(panel.Seeds) do
 		local p = c.plant
 		local unlocked = st.unlocked[p.key]
-		local col, row = shown % 10, math.floor(shown / 10)
+		local col, row = shown % 4, math.floor(shown / 4)
 		c:ClearAllPoints()
-		c:SetPoint("TOPLEFT", sx + col * 30, sy - row * 30)
+		c:SetPoint("TOPLEFT", sx + col * 24, sy - row * 24)
 		shown = shown + 1
 		if unlocked then
 			SetPlantIcon(c.Icon, 0, p.icon)

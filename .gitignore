@@ -1,3 +1,6 @@
 # MauCookie's images are copyrighted (Orteil / DashNet) and stay on the local
 # machine; they are never committed or packed into a release zip.
 MauCookie/Textures/
+node_modules/
+package-lock.json
+package.json

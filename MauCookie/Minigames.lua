@@ -77,6 +77,7 @@ function Minigames:OnToggle(b, open, panel)
 		return
 	end
 	if open then
+		panel:SetHeight(def.height)
 		if not panel.built then
 			panel.built = true
 			panel.Note:SetText("")

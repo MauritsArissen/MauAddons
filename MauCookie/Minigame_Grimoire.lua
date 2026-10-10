@@ -288,6 +288,9 @@ EFFECTS["diminish ineptitude"] = {
 function G:castSpell(spell, obj)
 	obj = obj or {}
 	local st = self.state
+	if not st then
+		return false
+	end
 	local cost = obj.cost or self:getSpellCost(spell)
 	if st.magic < cost then
 		return false
@@ -363,7 +366,9 @@ function G:render(panel)
 	panel.Bar.Text:SetPoint("CENTER")
 	panel.Bar.Text:SetJustifyH("CENTER")
 	panel.Refill = NS.Minigames:RefillButton(panel, "Click to refill 100 units of your magic meter for 1 sugar lump.", function()
-		G.state.magic = math.min(G.state.magic + 100, G.magicM)
+		if G.state then
+			G.state.magic = math.min(G.state.magic + 100, G.magicM)
+		end
 	end)
 	panel.Refill:SetPoint("LEFT", panel.Bar, "RIGHT", 4, 0)
 	panel.Spells = {}
@@ -402,6 +407,9 @@ end
 
 function G:refresh(panel)
 	local st = self.state
+	if not st or not panel.Bar then
+		return
+	end
 	local frac = self.magicM > 0 and st.magic / self.magicM or 0
 	panel.Bar.Fill:SetWidth(math.max(1, 300 * frac))
 	panel.Bar.Text:SetText(string.format("%s/%s", NS.Beautify(math.floor(st.magic)), NS.Beautify(self.magicM)))

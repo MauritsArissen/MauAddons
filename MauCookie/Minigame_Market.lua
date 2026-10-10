@@ -57,7 +57,7 @@ local function Highest()
 end
 
 function M:good(i)
-	return self.state.goods[i]
+	return self.state and self.state.goods[i] or nil
 end
 
 function M:load(fresh)
@@ -115,6 +115,9 @@ end
 
 function M:buyGood(i, n)
 	local st = self.state
+	if not st then
+		return false
+	end
 	local g = self:good(i)
 	local costInS = g.val
 	local cost = Highest() * costInS * self:overhead()
@@ -146,6 +149,9 @@ end
 
 function M:sellGood(i, n)
 	local st = self.state
+	if not st then
+		return false
+	end
 	local g = self:good(i)
 	if n == 10000 then
 		n = g.stock
@@ -180,7 +186,7 @@ end
 
 function M:hireBroker()
 	local st = self.state
-	if st.brokers < self:getMaxBrokers() and Game.save.cookies >= self:getBrokerPrice() then
+	if st and st.brokers < self:getMaxBrokers() and Game.save.cookies >= self:getBrokerPrice() then
 		Game:Spend(self:getBrokerPrice())
 		st.brokers = st.brokers + 1
 		Game:Changed()
@@ -191,6 +197,9 @@ end
 
 function M:upgradeOffice()
 	local st = self.state
+	if not st then
+		return false
+	end
 	local office = self.offices[st.officeLevel + 1]
 	if office.cost and Game:Count("Cursor") >= office.cost[1] and Game:Level("Cursor") >= office.cost[2] then
 		Game:Sacrifice(NS.B["Cursor"], office.cost[1])
@@ -215,7 +224,7 @@ end
 
 function M:takeLoan(id, interest)
 	local loan = self.loanTypes[id]
-	if not loan then
+	if not loan or not self.state then
 		return false
 	end
 	if not interest then
@@ -466,13 +475,16 @@ function M:render(panel)
 		row.Stock = UI.Text(row, 11, "")
 		row.Stock:SetPoint("RIGHT", -24, 0)
 		row.Stock:SetJustifyH("RIGHT")
-		row.Hide = CreateFrame("Button", nil, row)
-		row.Hide:SetSize(16, 16)
-		row.Hide:SetPoint("RIGHT", -2, 0)
-		row.Hide.Icon = row.Hide:CreateTexture(nil, "ARTWORK")
-		row.Hide.Icon:SetAllPoints()
-		row.Hide:SetScript("OnClick", function(self)
+		row.Eye = CreateFrame("Button", nil, row)
+		row.Eye:SetSize(16, 16)
+		row.Eye:SetPoint("RIGHT", -2, 0)
+		row.Eye.Icon = row.Eye:CreateTexture(nil, "ARTWORK")
+		row.Eye.Icon:SetAllPoints()
+		row.Eye:SetScript("OnClick", function(self)
 			local g = M:good(self:GetParent().index)
+			if not g then
+				return
+			end
 			g.hidden = not g.hidden
 			M.dirty = true
 			M:refresh(panel)
@@ -507,8 +519,9 @@ function M:render(panel)
 	bar.Buttons = {}
 	local x = 112
 	for _, def in ipairs({ { "Buy 1", 1 }, { "10", 10 }, { "100", 100 }, { "Max", 10000 }, { "Sell 1", -1 }, { "10", -10 }, { "100", -100 }, { "All", -10000 } }) do
-		local b = UI.FancyButton(bar, def[1], def[2] == 1 or def[2] == -1 and 40 or 32, 18, function()
-			if not M.selected then
+		local w = (def[1] == "Buy 1" or def[1] == "Sell 1") and 44 or 30
+		local b = UI.FancyButton(bar, def[1], w, 18, function()
+			if not M.selected or not M.state then
 				return
 			end
 			if def[2] > 0 then
@@ -518,8 +531,6 @@ function M:render(panel)
 			end
 			M:refresh(panel)
 		end)
-		local w = (def[1] == "Buy 1" or def[1] == "Sell 1") and 44 or 30
-		b:SetWidth(w)
 		b:SetPoint("LEFT", x, 0)
 		x = x + w + 2
 		table.insert(bar.Buttons, b)
@@ -560,11 +571,12 @@ function M:drawGraph(panel)
 					graph.Lines[li] = t
 				end
 				t:SetVertexColor(c[1], c[2], c[3], self.selected == i and 1 or 0.7)
-				local x1 = w / 2 - (k - 1) * span
-				local x2 = w / 2 - k * span
+				-- Coordinates are relative to the graph's centre; newest tick at the right edge.
+				local x1 = w / 2 - 2 - (k - 1) * span
+				local x2 = w / 2 - 2 - k * span
 				local y1 = g.vals[k] * scale - h / 2
 				local y2 = g.vals[k + 1] * scale - h / 2
-				UI.DrawLine(t, graph, w / 2 - (k - 1) * span - w / 2 + (w - 2), y1, w / 2 - k * span - w / 2 + (w - 2), y2, self.selected == i and 2 or 1)
+				UI.DrawLine(t, graph, x1, y1, x2, y2, self.selected == i and 2 or 1)
 			end
 		end
 	end
@@ -575,6 +587,9 @@ end
 
 function M:refresh(panel)
 	local st = self.state
+	if not st or not panel.Trade then
+		return
+	end
 	local office = self.offices[st.officeLevel + 1]
 	panel.Office:SetText(office.name .. (office.cost and " (upgrade)" or ""))
 	panel.Office:SetEnabledLook(office.cost ~= nil and Game:Count("Cursor") >= office.cost[1] and Game:Level("Cursor") >= office.cost[2])
@@ -598,8 +613,8 @@ function M:refresh(panel)
 			row.Delta:SetText(string.format("%s%.2f%%", delta >= 0 and "+" or "", delta))
 			row.Delta:SetTextColor(delta >= 0 and 0.4 or 1, delta >= 0 and 1 or 0.4, 0.4)
 			row.Stock:SetText(string.format("%d/%d", s.stock, self:getGoodMaxStock(i)))
-			NS.SetIcon(row.Hide.Icon, s.hidden and { 1, 7 } or { 0, 7 })
-			row.Hide.Icon:SetAlpha(s.hidden and 0.4 or 1)
+			NS.SetIcon(row.Eye.Icon, s.hidden and { 1, 7 } or { 0, 7 })
+			row.Eye.Icon:SetAlpha(s.hidden and 0.4 or 1)
 			row.Bg:SetVertexColor(self.selected == i and 0.3 or 0, self.selected == i and 0.3 or 0, self.selected == i and 0.2 or 0, 0.5)
 			row:Show()
 		else

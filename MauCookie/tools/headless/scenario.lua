@@ -247,3 +247,27 @@ for _, line in ipairs(__log) do
 	if line:find("Error in") then printed = printed + 1 end
 end
 print("guarded errors:", printed, "step failures:", errors)
+
+-- Poke every script handler of every frame created so far: tooltips,
+-- clicks, leaves.  Failures here are real crashes waiting for a mouse.
+step("poke scripts", function()
+	local pokes, fails = 0, 0
+	local function poke(f, name)
+		local fn = f.__scripts and f.__scripts[name]
+		if not fn then return end
+		pokes = pokes + 1
+		local ok, err = xpcall(fn, function(m) return debug.traceback(tostring(m), 2) end, f)
+		if not ok then
+			fails = fails + 1
+			if fails <= 40 then print("POKE FAIL " .. tostring(f.__kind) .. " " .. name .. ": " .. err) end
+		end
+	end
+	for _, f in ipairs(__frames) do
+		poke(f, "OnEnter")
+		poke(f, "OnLeave")
+	end
+	for _, f in ipairs(__frames) do
+		if f.__kind == "Button" then poke(f, "OnClick") end
+	end
+	print("poked", pokes, "handlers, failures", fails)
+end)

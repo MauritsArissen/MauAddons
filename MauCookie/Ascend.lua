@@ -210,6 +210,10 @@ function Game:Reset(hard)
 			end
 		end
 	end
+	if hard and NS.Minigames then
+		-- The wipe replaced save.minigames; forget the old state tables.
+		NS.Minigames:Start()
+	end
 	self:CalculateGains()
 	self:CheckMilkUnlocks()
 	self:StoreDirty()
