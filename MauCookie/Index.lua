@@ -80,8 +80,13 @@ for _, b in ipairs(NS.BUILDINGS) do
 	end
 end
 
+-- Numeric tiers first; "Fortune #103" has the string tier "fortune".
 table.sort(NS.KITTENS, function(a, b)
-	return (a.tier or 0) < (b.tier or 0)
+	local ta, tb = tonumber(a.tier) or 1e9, tonumber(b.tier) or 1e9
+	if ta ~= tb then
+		return ta < tb
+	end
+	return a.index < b.index
 end)
 
 -- Heavenly tree: parents as upgrade objects, children lists.
