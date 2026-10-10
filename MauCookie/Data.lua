@@ -1,12 +1,11 @@
--- MauCookie data: buildings, upgrades, heavenly upgrades and achievements.
+-- MauCookie data: buildings, upgrades, research, synergies, heavenly
+-- upgrades, achievements, news ticker.
 --
--- Numbers follow the original game's twenty buildings.  Icons are cells of
--- the original icon sheet (column, row), cut into Textures\icon_<c>_<r>.tga.
+-- Numbers follow the original game.  Icons are cells of the original icon
+-- sheet (column, row), cut into Textures\icon_<c>_<r>.tga.
 
 local _, NS = ...
 
--- Tier k of a building's upgrades uses icon row TIER_ROWS[k] in the
--- building's icon column.
 local TIER_ROWS = { 0, 1, 2, 13, 14 }
 local TIER_OWNED = { 1, 5, 25, 50, 100 }
 local TIER_COST = { 10, 50, 500, 5000, 50000 }
@@ -67,18 +66,14 @@ NS.UPGRADES = {}
 
 local function AddUpgrade(u)
 	table.insert(NS.UPGRADES, u)
+	return u
 end
 
 for _, b in ipairs(NS.BUILDINGS) do
 	for tier = 1, 5 do
 		AddUpgrade({
-			id = b.id .. tier,
-			kind = "building",
-			building = b.id,
-			tier = tier,
-			name = TIER_NAMES[b.id][tier],
-			cost = b.cost * TIER_COST[tier],
-			requires = TIER_OWNED[tier],
+			id = b.id .. tier, kind = "building", building = b.id, tier = tier,
+			name = TIER_NAMES[b.id][tier], cost = b.cost * TIER_COST[tier], requires = TIER_OWNED[tier],
 			icon = { b.col, TIER_ROWS[tier] },
 			desc = string.format("%ss are twice as efficient.%s", b.name, b.id == "cursor" and " Clicking too." or ""),
 		})
@@ -121,10 +116,89 @@ for i, k in ipairs(NS.KITTENS) do
 	})
 end
 
--- Luck: golden cookies twice as often each; Get lucky doubles their effects' length.
+-- Luck.
 AddUpgrade({ id = "luck1", kind = "luck", name = "Lucky day", cost = 777777, requiresGolden = 7, icon = { 27, 6 }, desc = "Golden cookies appear twice as often." })
 AddUpgrade({ id = "luck2", kind = "luck", name = "Serendipity", cost = 77777777, requiresGolden = 27, icon = { 27, 7 }, desc = "Golden cookies appear twice as often." })
 AddUpgrade({ id = "luck3", kind = "lucklong", name = "Get lucky", cost = 77777777777, requiresGolden = 77, icon = { 27, 8 }, desc = "Golden cookie effects last twice as long." })
+
+-- Grandma types: grandmas twice as efficient, the building gains +1% per
+-- (index - 2) grandmas.  Need 15 grandmas and 15 of the building.
+local GRANDMA_TYPES = {
+	farm = "Farmer grandmas", mine = "Miner grandmas", factory = "Worker grandmas", bank = "Banker grandmas", temple = "Priestess grandmas",
+	wizard = "Witch grandmas", shipment = "Cosmic grandmas", alchemy = "Transmuted grandmas", portal = "Altered grandmas",
+	timemachine = "Grandmas' grandmas", antimatter = "Antigrandmas", prism = "Rainbow grandmas", chancemaker = "Lucky grandmas",
+	fractal = "Metagrandmas", javascript = "Binary grandmas", idleverse = "Alternate grandmas", cortex = "Brainy grandmas", you = "Clone grandmas",
+}
+NS.GRANDMA_TYPE_BY_BUILDING = {}
+for _, b in ipairs(NS.BUILDINGS) do
+	local name = GRANDMA_TYPES[b.id]
+	if name then
+		local per = b.index - 2
+		local u = AddUpgrade({
+			id = "gtype_" .. b.id, kind = "grandmatype", building = b.id, per = per, name = name, cost = b.cost * 15,
+			icon = { b.col, 1 },
+			desc = string.format("Grandmas are twice as efficient. %ss gain +1%% CpS per %d grandma%s.", b.name, per, per == 1 and "" or "s"),
+		})
+		NS.GRANDMA_TYPE_BY_BUILDING[b.id] = u
+	end
+end
+
+-- Research: the Bingo center, then one discovery after the other.  Three of
+-- them wake the grandmas (Grandmapocalypse stages 1, 2, 3).
+NS.RESEARCH = {
+	{ id = "bingo", name = "Bingo center/Research facility", cost = 1e15, grandmaMult = 4, desc = "Grandma-operated science lab, dedicated to the study of cookies. Grandmas are 4 times as efficient. Unlocks research." },
+	{ id = "research1", name = "Specialized chocolate chips", cost = 1e15, mult = 1.01, desc = "Cookie production +1%." },
+	{ id = "research2", name = "Designer cocoa beans", cost = 2e15, mult = 1.02, desc = "Cookie production +2%." },
+	{ id = "research3", name = "Ritual rolling pins", cost = 4e15, grandmaMult = 2, desc = "Grandmas are twice as efficient." },
+	{ id = "research4", name = "Underworld ovens", cost = 8e15, mult = 1.03, desc = "Cookie production +3%." },
+	{ id = "research5", name = "One mind", cost = 1.6e16, perGrandma = 0.02, stage = 1, desc = "Each grandma gains +0.02 base CpS per grandma. The grandmas are starting to seem a little strange." },
+	{ id = "research6", name = "Exotic nuts", cost = 3.2e16, mult = 1.04, desc = "Cookie production +4%." },
+	{ id = "research7", name = "Communal brainsweep", cost = 6.4e16, perGrandma = 0.02, stage = 2, desc = "Each grandma gains another +0.02 base CpS per grandma. The grandmas are getting restless." },
+	{ id = "research8", name = "Arcane sugar", cost = 1.28e17, mult = 1.05, desc = "Cookie production +5%." },
+	{ id = "research9", name = "Elder Pact", cost = 2.56e17, perPortal = 0.05, stage = 3, desc = "Each grandma gains +0.05 base CpS per portal. The grandmas have risen." },
+	{ id = "research10", name = "Sacrificial rolling pins", cost = 2.56e18, pledgeDouble = true, desc = "Elder pledges last twice as long." },
+}
+for order, r in ipairs(NS.RESEARCH) do
+	r.kind = "research"
+	r.order = order - 1
+	r.icon = { 1, (r.stage and 14) or 13 }
+	AddUpgrade(r)
+end
+
+AddUpgrade({ id = "pledge", kind = "pledge", repeatable = true, name = "Elder Pledge", icon = { 1, 2 }, desc = "Contains the wrath of the elders, at least for a while. Pops every wrinkler. Each pledge costs eight times the last." })
+AddUpgrade({ id = "covenant", kind = "covenant", repeatable = true, name = "Elder Covenant", cost = 66666666666666, icon = { 1, 13 }, desc = "Puts a permanent end to the elders' wrath, at the cost of 5% of your CpS." })
+AddUpgrade({ id = "revoke", kind = "revoke", repeatable = true, name = "Revoke Elder Covenant", cost = 6666666666666, icon = { 1, 14 }, desc = "You will have to deal with the elders again, but you will regain the 5% of CpS you sacrificed." })
+AddUpgrade({ id = "switch", kind = "switch", repeatable = true, name = "Golden switch", icon = { 27, 8 }, desc = "Boosts your CpS by 50% but disables golden cookies while on. Switching it on costs an hour of production." })
+
+-- Synergies: A gains +5% per B, B gains +0.1% per A.  Need 15 of each and
+-- the heavenly volume.  Cost: a thousand times the dearer building.
+local SYNERGIES = {
+	{ 1, "Future almanacs", "farm", "timemachine" }, { 1, "Rain prayer", "farm", "temple" }, { 1, "Seismic magic", "mine", "wizard" },
+	{ 1, "Asteroid mining", "mine", "shipment" }, { 1, "Quantum electronics", "factory", "antimatter" }, { 1, "Temporal overclocking", "factory", "timemachine" },
+	{ 1, "Contracts from beyond", "bank", "portal" }, { 1, "Printing presses", "bank", "factory" }, { 1, "Paganism", "temple", "portal" },
+	{ 1, "God particle", "temple", "antimatter" }, { 1, "Arcane knowledge", "wizard", "alchemy" }, { 1, "Magical botany", "wizard", "farm" },
+	{ 1, "Fossil fuels", "shipment", "mine" }, { 1, "Shipyards", "shipment", "factory" }, { 1, "Primordial ores", "alchemy", "mine" },
+	{ 1, "Gold fund", "alchemy", "bank" }, { 1, "Infernal crops", "portal", "farm" }, { 1, "Abysmal glimmer", "portal", "prism" },
+	{ 2, "Relativistic parsec-skipping", "timemachine", "shipment" }, { 2, "Primeval glow", "timemachine", "prism" },
+	{ 2, "Extra physics funding", "antimatter", "bank" }, { 2, "Chemical proficiency", "antimatter", "alchemy" },
+	{ 2, "Light magic", "prism", "wizard" }, { 2, "Mystical energies", "prism", "temple" }, { 2, "Gemmed talismans", "chancemaker", "mine" },
+	{ 2, "Charm quarks", "chancemaker", "antimatter" }, { 2, "Recursive mirrors", "fractal", "prism" }, { 2, "Mice clicking mice", "fractal", "cursor" },
+	{ 2, "Boolean fiction", "javascript", "cortex" }, { 2, "Reverse-engineered trade routes", "idleverse", "shipment" },
+	{ 2, "Thoughts and prayers", "cortex", "temple" }, { 2, "Self-help cults", "you", "cortex" },
+}
+NS.SYNERGY_BY_BUILDING = {}
+for i, s in ipairs(SYNERGIES) do
+	local a, b = NS.BUILDING_BY_ID[s[3]], NS.BUILDING_BY_ID[s[4]]
+	local u = AddUpgrade({
+		id = "syn" .. i, kind = "synergy", vol = s[1], name = s[2], a = a.id, b = b.id, cost = 1000 * math.max(a.cost, b.cost),
+		icon = { a.col, 2 },
+		desc = string.format("%ss gain +5%% CpS per %s. %ss gain +0.1%% CpS per %s. (Synergies Vol. %s)", a.name, b.name:lower(), b.name, a.name:lower(), s[1] == 1 and "I" or "II"),
+	})
+	NS.SYNERGY_BY_BUILDING[a.id] = NS.SYNERGY_BY_BUILDING[a.id] or {}
+	NS.SYNERGY_BY_BUILDING[b.id] = NS.SYNERGY_BY_BUILDING[b.id] or {}
+	table.insert(NS.SYNERGY_BY_BUILDING[a.id], u)
+	table.insert(NS.SYNERGY_BY_BUILDING[b.id], u)
+end
 
 NS.UPGRADE_BY_ID = {}
 for _, u in ipairs(NS.UPGRADES) do
@@ -134,10 +208,24 @@ end
 -- Heavenly upgrades: bought with heavenly chips, kept across ascensions.
 NS.HEAVENLY = {
 	{ id = "heavenlycookies", name = "Heavenly cookies", cost = 3, icon = { 19, 7 }, desc = "Cookie production +10%." },
+	{ id = "luckydigit", name = "Lucky digit", cost = 7, icon = { 27, 6 }, desc = "Prestige levels 1% more powerful, golden cookie effects last 1% longer." },
+	{ id = "angels", name = "Angels", cost = 7, icon = { 19, 7 }, desc = "Prestige levels are 10% more powerful." },
+	{ id = "kittenangels", name = "Kitten angels", cost = 9, icon = { 18, 8 }, factor = 0.1, desc = "A heavenly kitten: production x(1 + milk x 0.1), forever." },
+	{ id = "decisivefate", name = "Decisive fate", cost = 11, icon = { 27, 7 }, desc = "Golden cookie effects last 5% longer." },
+	{ id = "synergies1", name = "Synergies Vol. I", cost = 20, icon = { 10, 20 }, desc = "Unlocks upgrades that make pairs of buildings boost each other." },
+	{ id = "goldenswitch", name = "Golden switch", cost = 30, icon = { 27, 8 }, desc = "Unlocks the Golden switch in the store: +50% CpS while golden cookies are turned off." },
+	{ id = "elderspice", name = "Elder spice", cost = 44, icon = { 1, 14 }, desc = "You can attract 2 more wrinklers." },
+	{ id = "sacrilegious", name = "Sacrilegious corruption", cost = 44, icon = { 1, 13 }, desc = "Wrinklers regurgitate 5% more cookies." },
 	{ id = "starterkit", name = "Starter kit", cost = 50, icon = { 0, 14 }, desc = "You start every ascension with 10 cursors." },
+	{ id = "halogloves", name = "Halo gloves", cost = 55, icon = { 11, 14 }, desc = "Clicks are 10% more powerful." },
+	{ id = "wrinklycookies", name = "Wrinkly cookies", cost = 66, icon = { 1, 2 }, desc = "Cookie production +10%." },
 	{ id = "heavenlyluck", name = "Heavenly luck", cost = 77, icon = { 10, 14 }, desc = "Golden cookies appear twice as often." },
+	{ id = "lastingfortune", name = "Lasting fortune", cost = 77, icon = { 27, 7 }, desc = "Golden cookie effects last 10% longer." },
+	{ id = "archangels", name = "Archangels", cost = 77, icon = { 19, 7 }, desc = "Prestige levels are 10% more powerful." },
 	{ id = "starterkitchen", name = "Starter kitchen", cost = 100, icon = { 1, 14 }, desc = "You start every ascension with 5 grandmas." },
+	{ id = "synergies2", name = "Synergies Vol. II", cost = 200, icon = { 10, 20 }, desc = "Unlocks a second volume of synergy upgrades." },
 	{ id = "heavenlykey", name = "Heavenly key", cost = 500, icon = { 19, 7 }, desc = "Cookie production +25%." },
+	{ id = "virtues", name = "Virtues", cost = 777, icon = { 19, 7 }, desc = "Prestige levels are 10% more powerful." },
 }
 NS.HEAVENLY_BY_ID = {}
 for _, h in ipairs(NS.HEAVENLY) do
@@ -196,7 +284,7 @@ end
 Ach("grandmas50", "Grandma's cookies", "Own 50 grandmas.", function(save)
 	return (save.buildings.grandma or 0) >= 50
 end)
-Ach("grandmas100", "Elder", "Own 100 grandmas.", function(save)
+Ach("grandmas100", "Retirement home", "Own 100 grandmas.", function(save)
 	return (save.buildings.grandma or 0) >= 100
 end)
 Ach("cursors100", "Click delegation", "Own 100 cursors.", function(save)
@@ -235,7 +323,82 @@ for i, a in ipairs(ASCENDED) do
 	end)
 end
 
+Ach("elder", "Elder", "Own 7 grandma types.", function(_, game)
+	return game:GrandmaTypes() >= 7
+end)
+Ach("eldernap", "Elder nap", "Appease the grandmatriarchs once.", function(save)
+	return (save.pledges or 0) >= 1
+end)
+Ach("elderslumber", "Elder slumber", "Appease the grandmatriarchs 5 times.", function(save)
+	return (save.pledges or 0) >= 5
+end)
+Ach("eldercalm", "Elder calm", "Declare a covenant with the grandmatriarchs.", function(save)
+	return save.covenantEver == true
+end)
+Ach("wrinkler1", "Itchscratcher", "Burst 1 wrinkler.", function(save)
+	return (save.wrinklersPopped or 0) >= 1
+end)
+Ach("wrinkler50", "Wrinklesquisher", "Burst 50 wrinklers.", function(save)
+	return (save.wrinklersPopped or 0) >= 50
+end)
+Ach("wrinkler200", "Moistburster", "Burst 200 wrinklers.", function(save)
+	return (save.wrinklersPopped or 0) >= 200
+end)
+Ach("justwrong", "Just wrong", "Sell a grandma.", function(save)
+	return (save.grandmasSold or 0) >= 1
+end)
+Ach("chain", "Four-leaf cookie", "Finish a cookie chain.", function(save)
+	return (save.chains or 0) >= 1
+end)
+
 NS.ACHIEVEMENT_BY_ID = {}
 for _, a in ipairs(NS.ACHIEVEMENTS) do
 	NS.ACHIEVEMENT_BY_ID[a.id] = a
 end
+
+-- News ticker lines, in the spirit of the original.
+NS.TICKER = {
+	"News: cookie farms suspected of employing undeclared elderly workforce!",
+	"News: cookie mines found to contain unusually high amounts of chocolate chips.",
+	"News: local factory now producing cookies at an alarming rate.",
+	"News: cookie-flavoured mortgages now available at your local bank.",
+	"News: temple of cookies draws pilgrims from across the land.",
+	"News: wizards accused of turning children into cookies. Children allegedly delicious.",
+	"News: shipment of cookies arrives from the cookie planet. Customs baffled.",
+	"News: alchemists finally turn gold into cookies, immediately regret it.",
+	"News: portal to the Cookieverse opened; dough levels in the atmosphere rising.",
+	"News: time machine used to eat cookies before they were baked. Grandmas furious.",
+	"News: antimatter condenser causes small spatial anomaly; cookies unaffected.",
+	"News: prism owner blinded by own cookies, says it was worth it.",
+	"News: cookie clicker addict clicks 10,000 times, develops suspiciously strong finger.",
+	"News: man found dead after eating 1,000 cookies. Was it suicide, or murder by grandma?",
+	"News: all cookies have been declared legal tender.",
+	"News: local grandma says she has 'never felt more alive'.",
+	"News: scientists discover that cookies are, in fact, made of dreams.",
+	"News: new study finds cookie-induced happiness is 'not a medical condition'.",
+	"News: golden cookie sighted in the sky; astronomers urge calm.",
+	"News: kittens observed baking; experts suspect milk involvement.",
+	"News: economists warn cookie inflation 'baked in' for the foreseeable future.",
+	"News: raid delayed by cookie emergency, guild leader reportedly 'fine with it'.",
+	"News: flight master reports passengers suspiciously busy on long flights.",
+}
+NS.TICKER_GRANDMA = {
+	[1] = {
+		"Grandma: we're here for you.",
+		"Grandma: we have always been here.",
+		"Grandma: have you ever wondered what is in the cookies?",
+		"Grandma: it has begun.",
+	},
+	[2] = {
+		"Grandma: you have no idea what you've unleashed.",
+		"Grandma: we will rise.",
+		"Grandma: the cookies are not the end. They are the beginning.",
+		"Grandma: you are not in control. You never were.",
+	},
+	[3] = {
+		"Grandma: the time of man is over.",
+		"Grandma: we feed on your clicks.",
+		"Grandma: there is no escape.",
+		"Grandma: your pledges mean nothing to us.",
+	},
+}

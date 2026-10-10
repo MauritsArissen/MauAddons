@@ -2,7 +2,7 @@
 ## Title: MauCookie
 ## Notes: Cookie Clicker in game: click the cookie, buy grandmas and farms, bake billions, ascend, beat your guild. /mck opens it.
 ## Author: Maurits Arissen
-## Version: 0.3.0
+## Version: 0.4.0
 ## SavedVariables: MauCookieDB
 ## IconTexture: Interface\AddOns\MauCookie\Textures\cookie.tga
 ## AddonCompartmentFunc: MauCookie_OnAddonCompartmentClick

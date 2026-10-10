@@ -168,6 +168,8 @@ function NS.NewSave()
 		buildings = {}, upgrades = {}, achievements = {},
 		golden = 0, playTime = 0, started = NS.Now(),
 		prestige = 0, chips = 0, heavenly = {}, allTime = 0, ascensions = 0,
+		wrinklers = {}, wrinklersPopped = 0, pledges = 0, pledgeUntil = 0, covenant = false, covenantEver = false,
+		researchReadyAt = 0, goldenSwitch = false, sold = 0, grandmasSold = 0, chains = 0,
 	}
 end
 
